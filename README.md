@@ -1,18 +1,18 @@
-**Hairdresser Booking System**
+**Barber Booking System**
 ==============================
 
 **Project Description and Purpose**
 -----------------------------------
 
-The **Hairdresser Booking System** is a microservices-based application designed to streamline appointment scheduling for hair salons. The system enables customers to book hairdresser appointments online while allowing hairdressers to manage their availability and appointments efficiently. Additionally, it provides a secure payment processing service for handling transactions.
+The **Barber Booking System** is a microservices-based application designed to streamline appointment scheduling for hair salons. The system enables customers to book barber appointments online while allowing barbers to manage their availability and appointments efficiently. Additionally, it provides a secure payment processing service for handling transactions.
 
 ### **Key Features:**
 
-*   **User Management**: Customers and hairdressers can create and manage their accounts.
+*   **User Management**: Customers and barbers can create and manage their accounts.
     
-*   **Appointment Booking**: Customers can book available time slots with their preferred hairdresser.
+*   **Appointment Booking**: Customers can book available time slots with their preferred Barbeb.
     
-*   **Availability Management**: Hairdressers can define their schedules and update their availability.
+*   **Availability Management**: Barbers can define their schedules and update their availability.
     
 *   **Payment Processing**: Secure transactions for booking appointments.
     

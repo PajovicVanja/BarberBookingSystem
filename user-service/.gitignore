@@ -1,0 +1,36 @@
+# node_modules should never be committed
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage/test output
+coverage/
+.nyc_output/
+jest-html-reporters-*.html
+
+# VSCode or JetBrains IDE configs
+.vscode/
+.idea/
+
+# Docker junk (optional)
+*.local
+*.env.local
+docker-compose.override.yml
+
+# Output from your code bundling or gathering scripts
+all-code.txt
+copy.js
