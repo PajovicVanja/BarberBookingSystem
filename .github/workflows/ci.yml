@@ -39,6 +39,19 @@ jobs:
         working-directory: ./user-service
         run: npm install
 
+      - name: Wait for DB to be ready
+        run: |
+          for i in {1..10}; do
+            nc -z localhost 5432 && echo "Postgres is up" && break
+            echo "Waiting for Postgres..."
+            sleep 2
+          done
+
+      # ✅ New (optional): Create the schema explicitly (if not done in test file)
+      # - name: Create 'userservice' schema
+      #   run: |
+      #     PGPASSWORD=123123 psql -h localhost -U postgres -d ita -c "CREATE SCHEMA IF NOT EXISTS userservice"
+
       - name: Run tests
         working-directory: ./user-service
         env:

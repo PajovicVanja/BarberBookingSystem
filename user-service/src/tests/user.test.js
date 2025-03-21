@@ -6,7 +6,8 @@ const { sequelize } = require('../../src/config/db');
 
 describe('User Service API', () => {
     beforeAll(async () => {
-        await User.sync({ force: true }); // Reset database for tests
+        await sequelize.createSchema('userservice', { ifNotExists: true });
+        await User.sync({ force: true });
     });
 
     let token;
