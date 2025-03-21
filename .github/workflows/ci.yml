@@ -47,11 +47,6 @@ jobs:
             sleep 2
           done
 
-      # ✅ New (optional): Create the schema explicitly (if not done in test file)
-      # - name: Create 'userservice' schema
-      #   run: |
-      #     PGPASSWORD=123123 psql -h localhost -U postgres -d ita -c "CREATE SCHEMA IF NOT EXISTS userservice"
-
       - name: Run tests
         working-directory: ./user-service
         env:
