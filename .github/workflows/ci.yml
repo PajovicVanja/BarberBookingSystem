@@ -41,7 +41,9 @@ jobs:
         run: npm install
 
       - name: Run tests
+        working-directory: ./user-service
         env:
           DATABASE_URL: postgres://postgres:123123@localhost:5432/ita
-          JWT_SECRET: your_jwt_secret
+          JWT_SECRET: test_jwt_123
+          PORT: 3000
         run: npm test
