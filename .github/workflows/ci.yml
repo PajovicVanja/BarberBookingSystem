@@ -2,11 +2,9 @@ name: Node.js CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build:
@@ -38,12 +36,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
+        working-directory: ./user-service
         run: npm install
 
       - name: Run tests
         working-directory: ./user-service
         env:
           DATABASE_URL: postgres://postgres:123123@localhost:5432/ita
-          JWT_SECRET: test_jwt_123
+          JWT_SECRET: ded42fffe3243eaa0de94b50e123c3bcd1a31cc6f2633e412306bd69ad9deb3a
           PORT: 3000
         run: npm test
