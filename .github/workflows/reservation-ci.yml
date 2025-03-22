@@ -2,9 +2,9 @@ name: Reservation Service CI
 
 on:
   push:
-    paths:
-      - 'reservation-service/**'
-      - '.github/workflows/reservation-ci.yml'
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   test:
