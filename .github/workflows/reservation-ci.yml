@@ -26,28 +26,28 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: 📥 Checkout code
+      - name:  Checkout code
         uses: actions/checkout@v3
 
-      - name: 🐍 Set up Python
+      - name:  Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
-      - name: 📦 Install dependencies
+      - name:  Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install grpcio-tools supervisor
 
-      - name: 🔁 Generate gRPC stubs
+      - name:  Generate gRPC stubs
         run: |
           python -m grpc_tools.protoc -I./app/proto \
             --python_out=. \
             --grpc_python_out=. \
             app/proto/reservation.proto
 
-      - name: ⚙️ Set up environment
+      - name:  Set up environment
         run: |
           echo "MONGO_URL=${{ secrets.MONGO_URL }}" >> .env
           echo "DATABASE_NAME=reservationdb" >> .env
@@ -55,9 +55,9 @@ jobs:
           echo "RABBITMQ_URL=amqp://guest:guest@localhost:5672/" >> .env
           echo "RABBITMQ_QUEUE=reservation_notifications" >> .env
 
-      - name: 🧠 Start FastAPI + gRPC with supervisord
+      - name:  Start FastAPI + gRPC with supervisord
         run: |
-          export PYTHONPATH=$(pwd)  # <-- 🔧 Important fix
+          export PYTHONPATH=$(pwd)  
 
           echo "
           [supervisord]
@@ -83,9 +83,9 @@ jobs:
           supervisord -c supervisord.conf &
           sleep 10
 
-      - name: 🧪 Run tests
+      - name:  Run tests
         env:
-          PYTHONPATH: ${{ github.workspace }}/reservation-service  # <-- ✅ fix here too
+          PYTHONPATH: ${{ github.workspace }}/reservation-service  
         run: |
           pytest -s tests/
 
