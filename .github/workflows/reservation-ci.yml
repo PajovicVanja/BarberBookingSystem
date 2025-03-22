@@ -57,6 +57,8 @@ jobs:
 
       - name: 🧠 Start FastAPI + gRPC with supervisord
         run: |
+          export PYTHONPATH=$(pwd)  # <-- 🔧 Important fix
+
           echo "
           [supervisord]
           nodaemon=true
@@ -79,11 +81,11 @@ jobs:
           " > supervisord.conf
 
           supervisord -c supervisord.conf &
-          sleep 10  # give it a bit more time to start both services
+          sleep 10
 
       - name: 🧪 Run tests
         env:
-          PYTHONPATH: /home/runner/work/BarberBookingSystem/BarberBookingSystem/reservation-service
+          PYTHONPATH: ${{ github.workspace }}/reservation-service  # <-- ✅ fix here too
         run: |
           pytest -s tests/
 
