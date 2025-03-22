@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+motor
+pydantic
+grpcio
+grpcio-tools
+pika
+pytest
+httpx
+pymongo
+protobuf
+anyio
+asgiref
+pytest-asyncio
+python-dotenv
