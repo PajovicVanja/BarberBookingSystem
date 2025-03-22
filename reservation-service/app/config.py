@@ -4,7 +4,7 @@ import os
 load_dotenv() 
 
 # MongoDB configuration
-MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://vanjapajovic:nekipass578@cluster0.sqsne.mongodb.net/")
+MONGO_URL = os.getenv("MONGO_URL")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "reservationdb")
 
 # RabbitMQ configuration
