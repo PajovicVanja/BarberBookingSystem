@@ -1,4 +1,4 @@
-name: Node.js CI
+name: User service CI
 
 on:
   push:
@@ -50,7 +50,7 @@ jobs:
       - name: Run tests
         working-directory: ./user-service
         env:
-          DATABASE_URL: postgres://postgres:123123@localhost:5432/ita
-          JWT_SECRET: ded42fffe3243eaa0de94b50e123c3bcd1a31cc6f2633e412306bd69ad9deb3a
-          PORT: 3000
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          PORT: ${{ secrets.PORT }}
         run: npm test
