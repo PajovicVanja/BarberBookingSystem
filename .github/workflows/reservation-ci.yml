@@ -14,6 +14,17 @@ jobs:
       run:
         working-directory: reservation-service
 
+    services:
+      rabbitmq:
+        image: rabbitmq:3.11
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v3
@@ -55,19 +66,35 @@ jobs:
           directory=.
           autostart=true
           autorestart=true
+          stdout_logfile=fastapi.log
+          stderr_logfile=fastapi.err
 
           [program:grpc]
           command=python app/grpc_server.py
           directory=.
           autostart=true
           autorestart=true
+          stdout_logfile=grpc.log
+          stderr_logfile=grpc.err
           " > supervisord.conf
 
           supervisord -c supervisord.conf &
-          sleep 5  # give it time to boot up
+          sleep 10  # give it a bit more time to start both services
 
       - name: 🧪 Run tests
         env:
           PYTHONPATH: /home/runner/work/BarberBookingSystem/BarberBookingSystem/reservation-service
         run: |
           pytest -s tests/
+
+      - name: 🪵 Show logs if failed
+        if: failure()
+        run: |
+          echo "===== FASTAPI LOG ====="
+          cat fastapi.log || true
+          echo "===== FASTAPI ERR ====="
+          cat fastapi.err || true
+          echo "===== GRPC LOG ====="
+          cat grpc.log || true
+          echo "===== GRPC ERR ====="
+          cat grpc.err || true
