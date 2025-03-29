@@ -54,65 +54,48 @@ It is built using **Python (FastAPI)** and communicates with other microservices
 | `ListUserReservations` | List all reservations for a user     |
 | `ConfirmPayment`       | Finalize reservation after payment   |
 
-## Setup Instructions
-1. **Install Dependencies:**  
-   ```bash
-   pip install -r requirements.txt
-Generate gRPC Stubs:
+Setup Instructions
+------------------
 
-bash
-Copy
-python -m grpc_tools.protoc -I./app/proto --python_out=./app --grpc_python_out=./app app/proto/reservation.proto
-Configure MongoDB and RabbitMQ:
-Ensure MongoDB and RabbitMQ are running locally or adjust the environment variables accordingly.
+### 1\. Install Dependencies
 
-Run the FastAPI Server:
+`   pip install -r requirements.txt   `
 
-bash
-Copy
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-Run the gRPC Server:
+### 2\. Generate gRPC Stubs
 
-bash
-Copy
-python app/grpc_server.py
-Run Tests:
+`   python -m grpc_tools.protoc -I./app/proto --python_out=./app --grpc_python_out=./app app/proto/reservation.proto   `
 
-bash
-Copy
-pytest
-Docker
-To build and run the Docker container:
+### 3\. Configure MongoDB and RabbitMQ
 
-bash
-Copy
-docker build -t reservation-service .
-docker run -p 8000:8000 -p 50051:50051 reservation-service
+Ensure MongoDB and RabbitMQ are running locally, or adjust the environment variables in your .env file or Docker configuration accordingly.
 
+### 4\. Run the FastAPI Server
 
+`   uvicorn app.main:app --host 0.0.0.0 --port 8000   `
 
-🐳 Docker Instructions
-Build the Docker image:
+### 5\. Run the gRPC Server
 
-bash
-Copy
-Edit
-docker build -t reservation-service .
-Run the container:
+`   python app/grpc_server.py   `
 
-bash
-Copy
-Edit
-docker run -p 8000:8000 -p 50051:50051 reservation-service-ita
-Open a shell inside the container:
+### 6\. Run Tests
 
-bash
-Copy
-Edit
-docker exec -it <docker id> /bin/bash
-Run tests inside the container:
+`   pytest   `
 
-bash
-Copy
-Edit
-PYTHONPATH=/app pytest -s tests/
+Docker Instructions
+-------------------
+
+### Build the Docker Image
+
+`   docker build -t reservation-service .   `
+
+### Run the Docker Container
+
+`   docker run -p 8000:8000 -p 50051:50051 reservation-service   `
+
+### Open a Shell Inside the Container
+
+`   docker exec -it  /bin/bash   `
+
+### Run Tests Inside the Container
+
+`   PYTHONPATH=/app pytest -s tests/   `

@@ -1,0 +1,10 @@
+2025-03-22 17:03:00,691 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-03-22 17:03:00,697 INFO supervisord started with pid 1
+2025-03-22 17:03:01,699 INFO spawned: 'grpc' with pid 7
+2025-03-22 17:03:01,702 INFO spawned: 'rest' with pid 8
+2025-03-22 17:03:03,633 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-03-22 17:03:03,634 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-03-22 17:03:07,639 WARN received SIGTERM indicating exit request
+2025-03-22 17:03:07,639 INFO waiting for grpc, rest to die
+2025-03-22 17:03:07,752 WARN stopped: rest (terminated by SIGTERM)
+2025-03-22 17:03:07,756 WARN stopped: grpc (terminated by SIGTERM)

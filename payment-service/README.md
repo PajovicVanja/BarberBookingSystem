@@ -3,7 +3,7 @@
 
 The **Payment Service** is a microservice responsible for processing payments for booked barber appointments. It ensures secure transactions and records payment details. This service interacts with the **Reservation Service** to validate appointments before processing payments.
 
-It is built using **Go (Gin framework)** and communicates with other microservices via **REST API** and optionally **RabbitMQ for asynchronous messaging**.
+It is built using **Go (Gin framework)** and communicates with other microservices via **REST API** and  **RabbitMQ for asynchronous messaging**.
 
 **Features**
 ------------

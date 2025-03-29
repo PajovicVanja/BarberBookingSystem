@@ -1,0 +1,128 @@
+definitions:
+  models.Payment:
+    properties:
+      amount:
+        type: number
+      created_at:
+        type: string
+      id:
+        type: integer
+      payment_method:
+        type: string
+      reservation_id:
+        type: integer
+      status:
+        type: string
+      user_id:
+        type: integer
+    type: object
+info:
+  contact: {}
+paths:
+  /api/payments:
+    post:
+      consumes:
+      - application/json
+      description: Process a new payment for a booking
+      parameters:
+      - description: Payment Information
+        in: body
+        name: payment
+        required: true
+        schema:
+          $ref: '#/definitions/models.Payment'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Payment'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Process a new payment
+      tags:
+      - payments
+  /api/payments/{id}:
+    get:
+      description: Retrieve payment details by payment ID
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Payment'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get payment details by ID
+      tags:
+      - payments
+  /api/payments/user/{id}:
+    get:
+      description: Retrieve all payments for a specific user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Payment'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get payment history for a user
+      tags:
+      - payments
+  /api/payments/webhook:
+    post:
+      consumes:
+      - application/json
+      description: Process webhook notifications from the payment gateway
+      parameters:
+      - description: Webhook Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle payment gateway webhooks
+      tags:
+      - payments
+swagger: "2.0"
