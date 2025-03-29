@@ -10,9 +10,8 @@ import (
 	"paymentservice/internal/repository"
 	"paymentservice/internal/services"
 	"github.com/gin-gonic/gin"
-	"github.com/swaggo/gin-swagger" // Swagger handler
+	"github.com/swaggo/gin-swagger" 
 	"github.com/swaggo/gin-swagger/swaggerFiles"
-
 	_ "paymentservice/docs"
 	_ "github.com/go-sql-driver/mysql" 
 )
@@ -31,12 +30,16 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize RabbitMQ connection
+	// Initialize RabbitMQ connection (for publishing)
 	mq, err := messaging.NewRabbitMQClient(cfg.RabbitMQURL)
 	if err != nil {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
 	defer mq.Close()
+
+	// Start the reservation consumer in the Payment Service (if needed)
+	// For example, listening on a "reservation_notifications" queue.
+	go messaging.StartReservationConsumer(cfg.RabbitMQURL, "reservation_notifications")
 
 	// Create repository and service layer instances
 	paymentRepo := repository.NewPaymentRepository(db)
@@ -70,7 +73,7 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		ServerPort:  getEnv("SERVER_PORT", "8080"),
-		DatabaseDSN: getEnv("DATABASE_DSN", "user:password@tcp(localhost:3306)/paymentdb"),
+		DatabaseDSN: getEnv("DATABASE_DSN", "root:root@tcp(localhost:3306)/paymentdb"),
 		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 	}
 	return cfg, nil
@@ -216,6 +219,104 @@ func (h *PaymentHandler) HandleWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "webhook processed"})
+}
+
+
+=== internal\messaging\consumer.go ===
+package messaging
+
+import (
+	"encoding/json"
+	"log"
+	"time"
+
+	"github.com/streadway/amqp"
+)
+
+// ReservationNotification represents the payload for a reservation update.
+type ReservationNotification struct {
+	ReservationID string `json:"reservation_id"`
+	Status        string `json:"status"`
+}
+
+// StartReservationConsumer connects to RabbitMQ and listens on a dedicated queue.
+func StartReservationConsumer(rabbitMQURL, queueName string) {
+	for {
+		conn, err := amqp.Dial(rabbitMQURL)
+		if err != nil {
+			log.Printf("Failed to connect to RabbitMQ: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		ch, err := conn.Channel()
+		if err != nil {
+			log.Printf("Failed to open a channel: %v", err)
+			conn.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		// Declare the queue
+		q, err := ch.QueueDeclare(
+			queueName, // name of the queue
+			true,      // durable
+			false,
+			false,
+			false,
+			nil,
+		)
+		if err != nil {
+			log.Printf("Failed to declare queue: %v", err)
+			ch.Close()
+			conn.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		msgs, err := ch.Consume(
+			q.Name,
+			"",
+			false, // manual ack
+			false,
+			false,
+			false,
+			nil,
+		)
+		if err != nil {
+			log.Printf("Failed to register consumer: %v", err)
+			ch.Close()
+			conn.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		log.Printf("Reservation consumer started on queue: %s", q.Name)
+		// Process messages in a goroutine.
+		forever := make(chan bool)
+		go func() {
+			for d := range msgs {
+				var notification ReservationNotification
+				if err := json.Unmarshal(d.Body, &notification); err != nil {
+					log.Printf("Error decoding message: %v", err)
+					d.Nack(false, true)
+					continue
+				}
+				log.Printf("Received reservation notification: %+v", notification)
+				// Here, add business logic to handle the notification.
+				// For example, you might validate the reservation or update local state.
+
+				// Acknowledge the message after processing.
+				d.Ack(false)
+			}
+		}()
+		<-forever // Block until something goes wrong
+		// If the consumer loop ends, close resources and try reconnecting.
+		ch.Close()
+		conn.Close()
+		log.Println("Consumer disconnected; reconnecting in 5 seconds...")
+		time.Sleep(5 * time.Second)
+	}
 }
 
 

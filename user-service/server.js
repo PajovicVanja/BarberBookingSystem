@@ -23,16 +23,17 @@ const PORT = process.env.PORT || 3000;
 // Only start the server if this file is run directly (not imported)
 if (require.main === module) {
     sequelize
-        .sync()
-        .then(() => {
-            console.log('Database connected');
-            app.listen(PORT, () => {
-                console.log(`User Service running on port ${PORT}`);
-            });
-        })
-        .catch((err) => {
-            console.error('Unable to connect to the database:', err);
+    .createSchema('userservice', { logging: false }) 
+    .then(() => sequelize.sync())
+    .then(() => {
+        console.log('Database connected');
+        app.listen(PORT, () => {
+            console.log(`User Service running on port ${PORT}`);
         });
+    })
+    .catch((err) => {
+        console.error('Unable to connect to the database:', err);
+    });
 }
 
 

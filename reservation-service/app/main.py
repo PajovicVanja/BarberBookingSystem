@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from app.models import Reservation, ReservationCreate, ReservationUpdate
 from app import crud
+from app.utils.rabbitmq_consumer import run_consumer_in_background
 import uvicorn
 from app.utils.logger import logger
 from bson.errors import InvalidId  # ⬅️ Add this import
@@ -10,6 +11,11 @@ logging.basicConfig(level=logging.DEBUG)  # 👈 enable DEBUG level globally
 
 
 app = FastAPI(title="Reservation Service")
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the RabbitMQ consumer in a background thread.
+    run_consumer_in_background()
 
 @app.post("/api/reservations", response_model=Reservation)
 async def create_reservation(reservation: ReservationCreate):
