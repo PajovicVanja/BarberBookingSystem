@@ -11,6 +11,10 @@ jobs:
     name: Run Go Unit Tests
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./cmd/payment-service
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,4 +38,4 @@ jobs:
         run: go mod tidy
 
       - name: Run Unit Tests
-        run: go test ./tests/...
+        run: go test ./../../tests/...
