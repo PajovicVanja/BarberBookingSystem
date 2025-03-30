@@ -1,4 +1,4 @@
-name: Run Payment Service Unit Tests
+name: Payment Service CI
 
 on:
   push:
@@ -10,10 +10,6 @@ jobs:
   test:
     name: Run Go Unit Tests
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./cmd/payment-service
 
     steps:
       - name: Checkout repository
@@ -36,6 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: go mod tidy
+        working-directory: ./cmd/payment-service
 
       - name: Run Unit Tests
-        run: go test ./../../tests/...
+        run: go test ./tests/...
