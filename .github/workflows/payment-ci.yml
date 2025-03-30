@@ -7,34 +7,24 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Run Go Unit Tests
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.21
+      - name: Find go.mod  # Debug step
+        run: find . -name go.mod
 
-      - name: Cache Go modules
-        uses: actions/cache@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: '1.21'
 
       - name: Install dependencies
         run: go mod tidy
-        # Remove or adjust the working-directory if go.mod is at the root
-        # working-directory: ./cmd/payment-service
+        working-directory: ./cmd/payment-service
 
       - name: Run Unit Tests
         run: go test ./tests/...
-        # If tests are in a subdirectory, adjust this path accordingly
+        working-directory: ./cmd/payment-service
