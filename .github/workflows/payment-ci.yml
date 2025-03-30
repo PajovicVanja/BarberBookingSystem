@@ -13,9 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find go.mod  # Debug step
-        run: find . -name go.mod
-
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -23,8 +20,8 @@ jobs:
 
       - name: Install dependencies
         run: go mod tidy
-        working-directory: ./cmd/payment-service
+        working-directory: ./payment-service  # Point to the folder with go.mod
 
       - name: Run Unit Tests
         run: go test ./tests/...
-        working-directory: ./cmd/payment-service
+        working-directory: ./payment-service  # Same here
