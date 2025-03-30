@@ -296,17 +296,15 @@ func StartReservationConsumer(rabbitMQURL, queueName string) {
 		forever := make(chan bool)
 		go func() {
 			for d := range msgs {
+				log.Printf("🔔 Raw message body: %s", d.Body) // 👈 ADD THIS
+			
 				var notification ReservationNotification
 				if err := json.Unmarshal(d.Body, &notification); err != nil {
-					log.Printf("Error decoding message: %v", err)
+					log.Printf("❌ Error decoding message: %v", err)
 					d.Nack(false, true)
 					continue
 				}
-				log.Printf("Received reservation notification: %+v", notification)
-				// Here, add business logic to handle the notification.
-				// For example, you might validate the reservation or update local state.
-
-				// Acknowledge the message after processing.
+				log.Printf("✅ Received reservation notification: %+v", notification)
 				d.Ack(false)
 			}
 		}()
