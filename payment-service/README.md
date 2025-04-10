@@ -39,4 +39,51 @@ It is built using **Go (Gin framework)** and communicates with other microservic
 **Setup Instructions (Coming Soon)**
 ------------------------------------
 
-Instructions for setting up and running the payment service will be provided after the backend integration.
+### 1\. Prerequisites
+
+Make sure you have the following installed:
+
+*   [Go](https://go.dev/dl/) (version 1.21 or higher)
+    
+*   [MySQL](https://dev.mysql.com/downloads/mysql/) (or an alternative like XAMPP)
+    
+*   [RabbitMQ](https://www.rabbitmq.com/download.html)
+    
+
+
+### 2\. Set Up the MySQL Database
+
+1.  Start your MySQL server.
+    
+2.  Create a database named paymentdb and a user with access:
+    
+
+`   CREATE DATABASE paymentdb;  CREATE USER 'root'@'localhost' IDENTIFIED BY 'root';  GRANT ALL PRIVILEGES ON paymentdb.* TO 'root'@'localhost';  FLUSH PRIVILEGES;   `
+
+> You can customize credentials, but make sure they match the DATABASE\_DSN value in the next step.
+
+### 3\. Set Up Environment Variables
+
+Create a .env file or export environment variables directly:
+
+`   export SERVER_PORT=8080  export DATABASE_DSN=root:root@tcp(localhost:3306)/paymentdb  export RABBITMQ_URL=amqp://guest:guest@localhost:5672/   `
+
+### 4\. Download Dependencies
+
+`   go mod download   `
+
+### 5\. Build and Run the Service
+
+`   go build -o paymentservice ./cmd/payment-service  ./paymentservice   `
+
+The service should be running at [http://localhost:8080](http://localhost:8080)
+
+### 6\. RabbitMQ Setup
+
+If not already running:
+
+*   Start RabbitMQ locally.
+    
+*   Access the management UI at [http://localhost:15672](http://localhost:15672)
+    
+*   Default credentials: guest / guest

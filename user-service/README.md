@@ -47,4 +47,30 @@ It is built using **Node.js (Express.js)** and communicates with other microserv
 **Setup Instructions (Coming Soon)**
 ------------------------------------
 
-Instructions for setting up and running the User Service will be provided after backend development is completed.
+### 1\. Install Dependencies
+
+`   npm install   `
+
+### 2\. Set Up Environment Variables
+
+Create a .env file in the user-service directory with the following content:
+
+`   PORT=3000  DATABASE_URL=postgres://  `
+  `  postgres:123123@localhost:5432/ita  `
+  `  JWT_SECRET=your_jwt_secret_here   `
+
+>  Replace your\_jwt\_secret\_here with a secure random string.
+
+### 3\. Create the Database
+
+Make sure PostgreSQL is running and create the database:
+
+`   createdb -U postgres ita   `
+
+> Or use any PostgreSQL client to create a database named ita.
+
+### 4\. Start the Server
+
+`   npm start   `
+
+Your service should now be running at [http://localhost:3000](http://localhost:3000).
