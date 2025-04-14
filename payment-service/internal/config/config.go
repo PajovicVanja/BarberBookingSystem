@@ -12,7 +12,7 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		ServerPort:  getEnv("SERVER_PORT", "8080"),
-		DatabaseDSN: getEnv("DATABASE_DSN", "root:root@tcp(localhost:3306)/paymentdb"),
+		DatabaseDSN: getEnv("DATABASE_DSN", "root:root@tcp(localhost:3306)/paymentdb?parseTime=true"),
 		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 	}
 	return cfg, nil

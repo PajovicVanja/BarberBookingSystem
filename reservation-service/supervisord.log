@@ -88,3 +88,55 @@
 2025-04-10 18:11:31,529 INFO waiting for grpc, rest to die
 2025-04-10 18:11:31,698 WARN stopped: rest (terminated by SIGTERM)
 2025-04-10 18:11:31,708 WARN stopped: grpc (terminated by SIGTERM)
+2025-04-14 15:25:46,189 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 15:25:46,195 INFO supervisord started with pid 1
+2025-04-14 15:25:47,204 INFO spawned: 'grpc' with pid 7
+2025-04-14 15:25:47,209 INFO spawned: 'rest' with pid 8
+2025-04-14 15:25:48,992 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 15:25:48,995 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 15:55:26,017 WARN received SIGTERM indicating exit request
+2025-04-14 15:55:26,020 INFO waiting for grpc, rest to die
+2025-04-14 15:55:27,199 WARN stopped: rest (terminated by SIGTERM)
+2025-04-14 15:55:27,209 WARN stopped: grpc (terminated by SIGTERM)
+2025-04-14 16:01:42,008 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 16:01:42,014 INFO supervisord started with pid 1
+2025-04-14 16:01:43,017 INFO spawned: 'grpc' with pid 7
+2025-04-14 16:01:43,020 INFO spawned: 'rest' with pid 8
+2025-04-14 16:01:44,642 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 16:01:44,642 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 16:26:09,766 WARN received SIGTERM indicating exit request
+2025-04-14 16:26:09,768 INFO waiting for grpc, rest to die
+2025-04-14 16:26:09,926 WARN stopped: rest (terminated by SIGTERM)
+2025-04-14 16:26:09,937 WARN stopped: grpc (terminated by SIGTERM)
+2025-04-14 16:29:35,902 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 16:29:35,908 INFO supervisord started with pid 1
+2025-04-14 16:29:36,911 INFO spawned: 'grpc' with pid 7
+2025-04-14 16:29:36,913 INFO spawned: 'rest' with pid 8
+2025-04-14 16:29:38,577 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 16:29:38,577 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:46:01,932 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 17:46:01,947 INFO supervisord started with pid 1
+2025-04-14 17:46:02,951 INFO spawned: 'grpc' with pid 7
+2025-04-14 17:46:02,957 INFO spawned: 'rest' with pid 8
+2025-04-14 17:46:03,960 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:46:03,961 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:47:29,689 WARN received SIGTERM indicating exit request
+2025-04-14 17:47:29,692 INFO waiting for grpc, rest to die
+2025-04-14 17:47:29,827 WARN stopped: rest (terminated by SIGTERM)
+2025-04-14 17:47:29,835 WARN stopped: grpc (terminated by SIGTERM)
+2025-04-14 17:47:41,494 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 17:47:41,508 INFO supervisord started with pid 1
+2025-04-14 17:47:42,514 INFO spawned: 'grpc' with pid 7
+2025-04-14 17:47:42,519 INFO spawned: 'rest' with pid 8
+2025-04-14 17:47:43,522 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:47:43,524 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:51:06,461 WARN received SIGTERM indicating exit request
+2025-04-14 17:51:06,463 INFO waiting for grpc, rest to die
+2025-04-14 17:51:06,656 WARN stopped: rest (terminated by SIGTERM)
+2025-04-14 17:51:06,663 WARN stopped: grpc (terminated by SIGTERM)
+2025-04-14 17:51:30,601 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-04-14 17:51:30,612 INFO supervisord started with pid 1
+2025-04-14 17:51:31,616 INFO spawned: 'grpc' with pid 7
+2025-04-14 17:51:31,624 INFO spawned: 'rest' with pid 8
+2025-04-14 17:51:32,629 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-04-14 17:51:32,630 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)

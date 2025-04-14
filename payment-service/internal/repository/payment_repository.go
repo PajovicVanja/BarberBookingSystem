@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"paymentservice/internal/models"
 	"time"
+	"log"
 )
 
 type PaymentRepository interface {
@@ -35,16 +36,17 @@ func (r *paymentRepository) Create(payment *models.Payment) error {
 	return nil
 }
 
-// GetByID retrieves a payment record by its ID.
 func (r *paymentRepository) GetByID(id int64) (*models.Payment, error) {
-	query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE id = ?"
-	row := r.db.QueryRow(query, id)
-	var payment models.Payment
-	err := row.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &payment, nil
+    query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE id = ?"
+    row := r.db.QueryRow(query, id)
+    var payment models.Payment
+    err := row.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
+    if err != nil {
+        // Log the error to see what exactly is happening.
+        log.Printf("Error retrieving payment with id=%d: %v", id, err)
+        return nil, err
+    }
+    return &payment, nil
 }
 
 // GetByUserID retrieves all payment records for a given user.
