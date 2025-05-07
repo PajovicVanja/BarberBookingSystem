@@ -70,3 +70,13 @@ exports.deleteUser = async (req, res) => {
         res.status(500).json({ message: 'Error deleting user', error: err.message });
     }
 };
+
+exports.getAllUsers = async (req, res) => {
+    try {
+        const users = await userRepository.getAllUsers();
+        res.json(users);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Error retrieving users', error: err.message });
+    }
+};

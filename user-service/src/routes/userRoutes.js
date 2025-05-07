@@ -8,5 +8,7 @@ router.post('/login', userController.login);
 router.get('/profile', authMiddleware, userController.getProfile);
 router.patch('/profile', authMiddleware, userController.updateProfile);
 router.delete('/:id', authMiddleware, userController.deleteUser);
+router.get('/', userController.getAllUsers);
+
 
 module.exports = router;

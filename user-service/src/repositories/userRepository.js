@@ -20,6 +20,11 @@ class UserRepository {
     async deleteUser(id) {
         return await User.destroy({ where: { id } });
     }
+    
+    async getAllUsers() {
+        return await User.findAll();
+    }
+    
 }
 
 module.exports = new UserRepository();

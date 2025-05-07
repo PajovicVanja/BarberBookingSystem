@@ -31,6 +31,29 @@ app.use('/api/users', createProxyMiddleware({
   }
 }));
 
+const joinJson = (...objs) => Object.assign({}, ...objs);
+
+// NEW  aggregated route  ──────────────────────────────────────────────
+app.get('/api/dashboard/user/:id', async (req, res) => {
+  try {
+    const uid  = req.params.id;
+    const [profile, reservations, payments] = await Promise.all([
+      axios.get(`http://user-service:3000/api/users/profile`,  { headers: req.headers, timeout: 2000 }),
+      axios.get(`http://reservation-service:8000/api/reservations/user/${uid}`, { timeout: 2000 }),
+      axios.get(`http://payment-service:8080/api/payments/user/${uid}`,        { timeout: 2000 })
+    ]).then(r => r.map(resp => resp.data));
+
+    res.json(joinJson(
+      { profile },
+      { reservations },
+      { payments }
+    ));
+  } catch (e) {
+    console.error(e.message);
+    res.status(502).json({ error: 'aggregation-failed', detail: e.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('Welcome to the Web API Gateway');
 });

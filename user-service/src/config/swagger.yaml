@@ -3,6 +3,29 @@ info:
   title: User Service API
   version: 1.0.0
 paths:
+  /api/users:
+    get:
+      summary: Get all users
+      responses:
+        '200':
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    username:
+                      type: string
+                    email:
+                      type: string
+                    password:
+                      type: string
+                    role:
+                      type: string
   /api/users/register:
     post:
       summary: Register a new user
