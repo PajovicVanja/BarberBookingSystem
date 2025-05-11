@@ -46,20 +46,25 @@ const UsersApp        = lazy(() => import('UsersMF/App'));
 const ReservationsApp = lazy(() => import('ReservationsMF/App'));
 const PaymentsApp     = lazy(() => import('PaymentsMF/App'));
 
-const Nav = () => (
-  <nav className="flex gap-6 p-4 shadow-md">
-    <Link to="/users">Users</Link>
-    <Link to="/reservations">Reservations</Link>
-    <Link to="/payments">Payments</Link>
-  </nav>
-);
+ const Nav = () => {
+     const token = localStorage.getItem('token');
+     return (
+       <nav className="flex gap-6 p-4 shadow-md">
+         {!token && <Link to="/users/login">Login</Link>}
+         {!token && <Link to="/users/register">Register</Link>}
+         { token && <Link to="/users/profile">Profile</Link> }
+         <Link to="/reservations">Reservations</Link>
+         <Link to="/payments">Payments</Link>
+       </nav>
+     );
+  };
 
 const Shell = () => (
   <BrowserRouter>
     <Nav />
     <Suspense fallback={<p className="p-4">Loading…</p>}>
       <Routes>
-        <Route path="/" element={<Navigate to="/users" replace />} />
+        <Route path="/" element={<Navigate to="/users/login" replace />} />
         <Route path="/users/*"        element={<UsersApp />} />
         <Route path="/reservations/*" element={<ReservationsApp />} />
         <Route path="/payments/*"     element={<PaymentsApp />} />
@@ -110,7 +115,8 @@ module.exports = (_, argv) => ({
       },
       shared: {
         react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false }
+        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]
@@ -154,51 +160,126 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
 
-const api = axios.create({
+const paymentsApi = axios.create({
   baseURL: 'http://localhost:4000/api/payments',
 });
+const reservationsApi = axios.create({
+  baseURL: 'http://localhost:4000/api/reservations',
+});
+
+// same JWT decode helper
+function decodeToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return {};
+  }
+}
 
 function CreatePayment() {
-  const [form, setForm] = useState({ user_id: '', reservation_id: '', amount: '', payment_method: 'cash' });
+  const token = localStorage.getItem('token');
+  const { id: user_id } = decodeToken(token);
+  const [reservations, setReservations] = useState([]);
+  const [form, setForm] = useState({
+    user_id: user_id || '',
+    reservation_id: '',
+    amount: '',
+    payment_method: 'cash',
+  });
 
-  const handleSubmit = async (e) => {
+  useEffect(() => {
+    if (user_id) {
+      // fetch only this user's reservations
+      reservationsApi
+        .get(`/user/${user_id}`)
+        .then(res => setReservations(res.data))
+        .catch(console.error);
+
+      setForm(f => ({ ...f, user_id }));
+    }
+  }, [user_id]);
+
+  const handleSubmit = async e => {
     e.preventDefault();
-    await api.post('', form);
+    await paymentsApi.post(
+      '',
+      form,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     alert('Payment processed!');
   };
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Create Payment</h2>
-      <input placeholder="User ID" onChange={(e) => setForm({ ...form, user_id: e.target.value })} required />
-      <input placeholder="Reservation ID" onChange={(e) => setForm({ ...form, reservation_id: e.target.value })} required />
-      <input type="number" placeholder="Amount" onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
-      <select onChange={(e) => setForm({ ...form, payment_method: e.target.value })}>
-        <option value="cash">Cash</option>
-        <option value="credit_card">Credit Card</option>
-      </select>
+      <p><strong>User:</strong> {user_id}</p>
+
+      <label>
+        Reservation:
+        <select
+          value={form.reservation_id}
+          onChange={e => setForm({ ...form, reservation_id: e.target.value })}
+          required
+        >
+          <option value="">— choose reservation —</option>
+          {reservations.map(r => (
+            <option key={r.id} value={r.id}>
+              {new Date(r.appointment_time).toLocaleString()} ({r.status})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        Amount (€):
+        <input
+          type="number"
+          value={form.amount}
+          onChange={e => setForm({ ...form, amount: e.target.value })}
+          required
+        />
+      </label>
+
+      <label>
+        Method:
+        <select
+          value={form.payment_method}
+          onChange={e =>
+            setForm({ ...form, payment_method: e.target.value })
+          }
+        >
+          <option value="cash">Cash</option>
+          <option value="credit_card">Credit Card</option>
+        </select>
+      </label>
+
       <button type="submit">Pay</button>
     </form>
   );
 }
 
 function ListPayments() {
+  const token = localStorage.getItem('token');
+  const { id: user_id } = decodeToken(token);
   const [payments, setPayments] = useState([]);
-  const [userId, setUserId] = useState('');
 
-  const fetchPayments = async () => {
-    const res = await api.get(`/user/${userId}`);
-    setPayments(res.data);
-  };
+  useEffect(() => {
+    if (user_id) {
+      paymentsApi
+        .get(`/user/${user_id}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => setPayments(res.data))
+        .catch(console.error);
+    }
+  }, [user_id]);
 
   return (
     <div>
-      <h2>List Payments</h2>
-      <input placeholder="User ID" onChange={(e) => setUserId(e.target.value)} />
-      <button onClick={fetchPayments}>Fetch</button>
+      <h2>My Payments</h2>
       <ul>
         {payments.map(p => (
-          <li key={p.id}>{p.amount}€ - {p.status}</li>
+          <li key={p.id}>
+            €{p.amount.toFixed(2)} — {p.status} ({new Date(p.created_at).toLocaleString()})
+          </li>
         ))}
       </ul>
     </div>
@@ -276,7 +357,8 @@ module.exports = (_, argv) => ({
       exposes: { './App': './src/App' },
       shared: {
           react:      { singleton: true, eager: true, requiredVersion: false },
-          'react-dom':{ singleton: true, eager: true, requiredVersion: false }
+          'react-dom':{ singleton: true, eager: true, requiredVersion: false },
+          'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]
@@ -320,47 +402,128 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
 
-const api = axios.create({
+// point at your web gateway
+const reservationApi = axios.create({
   baseURL: 'http://localhost:4000/api/reservations',
 });
+const usersApi = axios.create({
+  baseURL: 'http://localhost:4000/api/users',
+});
+
+// small helper to decode JWT payload
+function decodeToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return {};
+  }
+}
 
 function CreateReservation() {
-  const [form, setForm] = useState({ user_id: '', barber_id: '', appointment_time: '' });
+  const token = localStorage.getItem('token');
+  const { id: user_id } = decodeToken(token);
+  const [barbers, setBarbers] = useState([]);
+  const [form, setForm] = useState({
+    user_id: user_id || '',
+    barber_id: '',
+    appointment_time: '',
+  });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    await api.post('', form);
-    alert('Reservation created!');
-  };
+  useEffect(() => {
+    // fetch all barbers
+    if (token) {
+      usersApi
+        .get('/barbers', { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => setBarbers(res.data))
+        .catch(console.error);
+    }
+  }, [token]);
+
+     const handleSubmit = async e => {
+         e.preventDefault();
+         // build a full ISO timestamp
+              // force both IDs to strings, and build a valid ISO datetime
+              const payload = {
+                user_id:      String(form.user_id),
+                barber_id:    String(form.barber_id),
+                appointment_time: new Date(form.appointment_time).toISOString(),
+              };
+         console.log('→ POST /api/reservations payload:', payload);
+     
+         try {
+           const res = await reservationApi.post('', payload, {
+             headers: { Authorization: `Bearer ${token}` },
+           });
+           alert('Reservation created: ' +  JSON.stringify(res.data));
+         } catch (err) {
+           // Axios wraps the server body on err.response.data
+           console.error('❌ Reservation error response:', err.response?.data || err);
+           alert('Failed to create reservation:\n'  +
+                 JSON.stringify(err.response?.data, null, 2));
+         }
+       };
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Create Reservation</h2>
-      <input placeholder="User ID" onChange={(e) => setForm({ ...form, user_id: e.target.value })} required />
-      <input placeholder="Barber ID" onChange={(e) => setForm({ ...form, barber_id: e.target.value })} required />
-      <input type="datetime-local" onChange={(e) => setForm({ ...form, appointment_time: e.target.value })} required />
+      {/* show current user but don’t let them change it */}
+      <p><strong>User:</strong> {user_id}</p>
+
+      <label>
+        Barber:
+        <select
+          value={form.barber_id}
+          onChange={e => setForm({ ...form, barber_id: e.target.value })}
+          required
+        >
+          <option value="">— choose barber —</option>
+          {barbers.map(b => (
+            <option key={b.id} value={b.id}>
+              {b.username}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        Appointment Time:
+        <input
+          type="datetime-local"
+          value={form.appointment_time}
+          onChange={e =>
+            setForm({ ...form, appointment_time: e.target.value })
+          }
+          required
+        />
+      </label>
+
       <button type="submit">Create</button>
     </form>
   );
 }
 
 function ListReservations() {
+  const token = localStorage.getItem('token');
+  const { id: user_id } = decodeToken(token);
   const [reservations, setReservations] = useState([]);
-  const [userId, setUserId] = useState('');
 
-  const fetchReservations = async () => {
-    const res = await api.get(`/user/${userId}`);
-    setReservations(res.data);
-  };
+  useEffect(() => {
+    if (user_id) {
+      reservationApi
+        .get(`/user/${user_id}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => setReservations(res.data))
+        .catch(console.error);
+    }
+  }, [user_id, token]);
 
   return (
     <div>
-      <h2>List Reservations</h2>
-      <input placeholder="User ID" onChange={(e) => setUserId(e.target.value)} />
-      <button onClick={fetchReservations}>Fetch</button>
+      <h2>My Reservations</h2>
       <ul>
         {reservations.map(r => (
-          <li key={r.id}>{r.appointment_time} - {r.status}</li>
+          <li key={r.id}>
+            {new Date(r.appointment_time).toLocaleString()} — {r.status}
+          </li>
         ))}
       </ul>
     </div>
@@ -438,7 +601,8 @@ module.exports = (_, argv) => ({
       exposes: { './App': './src/App' },
       shared: {
         react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false }
+        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]
@@ -480,7 +644,7 @@ module.exports = (_, argv) => ({
 === users-mf\src\App.js ===
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 
 const api = axios.create({
   baseURL: 'http://localhost:4000/api/users',
@@ -490,20 +654,20 @@ function Register() {
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'customer' });
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault();
     await api.post('/register', form);
     alert('Registered! Now login.');
-    navigate('/login');
+    navigate('/login');    // relative: goes to /users/login
   };
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Register</h2>
-      <input placeholder="Username" onChange={(e) => setForm({ ...form, username: e.target.value })} required />
-      <input placeholder="Email" onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-      <input type="password" placeholder="Password" onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-      <select onChange={(e) => setForm({ ...form, role: e.target.value })}>
+      <input placeholder="Username"    onChange={e => setForm({ ...form, username: e.target.value })} required />
+      <input placeholder="Email"       onChange={e => setForm({ ...form, email:    e.target.value })} required />
+      <input type="password" placeholder="Password" onChange={e => setForm({ ...form, password: e.target.value })} required />
+      <select onChange={e => setForm({ ...form, role: e.target.value })}>
         <option value="customer">Customer</option>
         <option value="barber">Barber</option>
       </select>
@@ -516,19 +680,19 @@ function Login() {
   const [form, setForm] = useState({ username: '', password: '' });
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault();
     const res = await api.post('/login', form);
     localStorage.setItem('token', res.data.token);
     alert('Login successful');
-    navigate('/profile');
+    navigate('/profile');  // relative: goes to /users/profile
   };
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Login</h2>
-      <input placeholder="Username" onChange={(e) => setForm({ ...form, username: e.target.value })} required />
-      <input type="password" placeholder="Password" onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+      <input placeholder="Username"    onChange={e => setForm({ ...form, username: e.target.value })} required />
+      <input type="password" placeholder="Password" onChange={e => setForm({ ...form, password: e.target.value })} required />
       <button type="submit">Login</button>
     </form>
   );
@@ -540,18 +704,17 @@ function Profile() {
 
   useEffect(() => {
     api.get('/profile', { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setProfile(res.data))
-      .catch(console.error);
+       .then(res => setProfile(res.data))
+       .catch(console.error);
   }, []);
 
   if (!profile) return <p>Loading...</p>;
-
   return (
     <div>
       <h2>Profile</h2>
       <p>Username: {profile.username}</p>
-      <p>Email: {profile.email}</p>
-      <p>Role: {profile.role}</p>
+      <p>Email:    {profile.email}</p>
+      <p>Role:     {profile.role}</p>
     </div>
   );
 }
@@ -559,9 +722,18 @@ function Profile() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Register />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/profile" element={<Profile />} />
+      {/* when at /users      → redirect to /users/login */}
+      <Route index       element={<Navigate to="login"    replace />} />
+
+      {/* matches /users/login     */}
+      <Route path="login"    element={<Login />} />
+      {/* matches /users/register  */}
+      <Route path="register" element={<Register />} />
+      {/* matches /users/profile   */}
+      <Route path="profile"  element={<Profile />} />
+
+      {/* any other /users/* → back to login */}
+      <Route path="*" element={<Navigate to="login" replace />} />
     </Routes>
   );
 }
@@ -628,7 +800,8 @@ module.exports = (_, argv) => ({
       exposes: { './App': './src/App' },
       shared: {
         react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false }
+        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]

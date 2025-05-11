@@ -9,6 +9,6 @@ router.get('/profile', authMiddleware, userController.getProfile);
 router.patch('/profile', authMiddleware, userController.updateProfile);
 router.delete('/:id', authMiddleware, userController.deleteUser);
 router.get('/', userController.getAllUsers);
-
+router.get('/barbers', authMiddleware, userController.getBarbers);
 
 module.exports = router;

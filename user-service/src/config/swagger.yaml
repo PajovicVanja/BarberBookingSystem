@@ -107,6 +107,21 @@ paths:
       responses:
         '200':
           description: User deleted successfully
+
+  /api/users/barbers:
+    get:
+      summary: Get all barbers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of users with role “barber”
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
 components:
   securitySchemes:
     bearerAuth:

@@ -24,6 +24,10 @@ class UserRepository {
     async getAllUsers() {
         return await User.findAll();
     }
+
+    async getUsersByRole(role) {
+        return await User.findAll({ where: { role } });
+      }
     
 }
 

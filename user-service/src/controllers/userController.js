@@ -79,4 +79,18 @@ exports.getAllUsers = async (req, res) => {
         console.error(err);
         res.status(500).json({ message: 'Error retrieving users', error: err.message });
     }
+
+
+    
 };
+
+
+ exports.getBarbers = async (req, res) => {
+         try {
+             const barbers = await userRepository.getUsersByRole('barber');
+             res.json(barbers);
+         } catch (err) {
+             console.error(err);
+             res.status(500).json({ message: 'Error fetching barbers', error: err.message });
+         }
+     };
