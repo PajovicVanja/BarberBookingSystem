@@ -409,7 +409,7 @@ func NewPaymentRepository(db *sql.DB) PaymentRepository {
 	return &paymentRepository{db: db}
 }
 
-// Create inserts a new payment record into the database.
+// Create inserts a new payment record into the databdsadaase.
 func (r *paymentRepository) Create(payment *models.Payment) error {
 	query := `
 	INSERT INTO payments

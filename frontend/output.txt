@@ -197,7 +197,6 @@ function CreatePayment() {
           setReservations(res.data.filter(r => r.status === 'accepted'));
         })
         .catch(console.error);
-
       setForm(f => ({ ...f, user_id }));
     }
   }, [user_id]);
@@ -212,11 +211,9 @@ function CreatePayment() {
     };
 
     try {
-      const res = await paymentsApi.post(
-        '',
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await paymentsApi.post('', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       alert('Payment processed: ' + JSON.stringify(res.data));
     } catch (err) {
       console.error('❌ Payment error response:', err.response?.data || err);
@@ -260,9 +257,7 @@ function CreatePayment() {
         Method:
         <select
           value={form.payment_method}
-          onChange={e =>
-            setForm({ ...form, payment_method: e.target.value })
-          }
+          onChange={e => setForm({ ...form, payment_method: e.target.value })}
         >
           <option value="cash">Cash</option>
           <option value="credit_card">Credit Card</option>
@@ -294,8 +289,7 @@ function ListPayments() {
       <ul>
         {payments.map(p => (
           <li key={p.id}>
-            €{p.amount.toFixed(2)} — {p.status} (
-            {new Date(p.created_at).toLocaleString()})
+            €{p.amount.toFixed(2)} — {p.status} (on {new Date(p.created_at).toLocaleString()})
           </li>
         ))}
       </ul>
@@ -305,17 +299,15 @@ function ListPayments() {
 
 function BarberPayments() {
   const token = localStorage.getItem('token');
-  const { id: user_id, role } = decodeToken(token);
+  const { id: barber_id } = decodeToken(token);
   const [payments, setPayments] = useState([]);
 
   useEffect(() => {
-    if (role === 'barber') {
-      paymentsApi
-        .get(`/barber/${user_id}`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => setPayments(res.data))
-        .catch(console.error);
-    }
-  }, [user_id, role]);
+    paymentsApi
+      .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setPayments(res.data))
+      .catch(console.error);
+  }, [barber_id]);
 
   return (
     <div>
@@ -323,8 +315,9 @@ function BarberPayments() {
       <ul>
         {payments.map(p => (
           <li key={p.id}>
-            Customer #{p.user_id} — €{p.amount.toFixed(2)} via {p.payment_method}
-            on {new Date(p.created_at).toLocaleString()}
+            <strong>Customer #{p.user_id}</strong> paid <strong>€{p.amount.toFixed(2)}</strong> via <em>{p.payment_method}</em>
+            <br/>
+            <small>{new Date(p.created_at).toLocaleString()}</small>
           </li>
         ))}
       </ul>
@@ -333,11 +326,19 @@ function BarberPayments() {
 }
 
 export default function App() {
+  const token = localStorage.getItem('token');
+  const { role } = decodeToken(token);
+
   return (
     <Routes>
-      <Route path="/" element={<CreatePayment />} />
-      <Route path="list" element={<ListPayments />} />
-      <Route path="barber" element={<BarberPayments />} />
+      {role === 'barber' ? (
+        <Route path="/" element={<BarberPayments />} />
+      ) : (
+        <>
+          <Route path="/" element={<CreatePayment />} />
+          <Route path="list" element={<ListPayments />} />
+        </>
+      )}
     </Routes>
   );
 }

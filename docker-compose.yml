@@ -1,6 +1,7 @@
 version: '3.9'
 
 services:
+  # ──────────── databases & backends ────────────
   db:
     image: postgres:14
     container_name: postgres-db
@@ -28,8 +29,8 @@ services:
     container_name: rabbitmq-service
     restart: always
     ports:
-      - "5672:5672"     # AMQP protocol
-      - "15672:15672"   # Web UI
+      - "5672:5672"
+      - "15672:15672"
 
   mysql:
     image: mysql:8.0
@@ -45,25 +46,19 @@ services:
       - ./payment-service/creatingdb.sql:/docker-entrypoint-initdb.d/creatingdb.sql
 
   user-service:
-    build:
-      context: ./user-service
+    build: ./user-service
     container_name: user-service
-    depends_on:
-      - db
-    ports:
-      - "3000:3000"
+    depends_on: [db]
+    ports: ["3000:3000"]
     environment:
       DATABASE_URL: postgres://postgres:123123@db:5432/ita
       JWT_SECRET: your_jwt_secret_here
       PORT: 3000
 
   reservation-service:
-    build:
-      context: ./reservation-service
+    build: ./reservation-service
     container_name: reservation-service
-    depends_on:
-      - mongo
-      - rabbitmq
+    depends_on: [mongo, rabbitmq]
     ports:
       - "8000:8000"
       - "50051:50051"
@@ -77,45 +72,58 @@ services:
       - ./reservation-service:/app
 
   payment-service:
-    build:
-      context: ./payment-service
+    build: ./payment-service
     container_name: payment-service
-    depends_on:
-      - rabbitmq
-      - mysql
-    ports:
-      - "8080:8080"
+    depends_on: [rabbitmq, mysql]
+    ports: ["8080:8080"]
     environment:
       SERVER_PORT: "8080"
       DATABASE_DSN: root:root@tcp(mysql-db:3306)/paymentdb?parseTime=true
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
 
-
-
   gateway-web:
-    build:
-      context: ./gateway-web
+    build: ./gateway-web
     container_name: gateway-web
-    depends_on:
-      - user-service
-      - reservation-service
-      - payment-service
-    ports:
-      - "4000:4000"
+    depends_on: [user-service, reservation-service, payment-service]
+    ports: ["4000:4000"]
     environment:
       PORT: 4000
 
   gateway-mobile:
-    build:
-      context: ./gateway-mobile
+    build: ./gateway-mobile
     container_name: gateway-mobile
-    depends_on:
-      - user-service
-      - reservation-service
-      - payment-service
-    ports:
-      - "5000:5000"
+    depends_on: [user-service, reservation-service, payment-service]
+    ports: ["5000:5000"]
 
+  # ──────────── front-ends ────────────
+  container:
+    build:
+      context: ./frontend/container
+    container_name: container
+    depends_on: [gateway-web]
+    ports:
+      - "3001:80"
+
+  users-mf:
+    build:
+      context: ./frontend/users-mf
+    container_name: users-mf
+    ports:
+      - "3002:80"
+
+  reservations-mf:
+    build:
+      context: ./frontend/reservations-mf
+    container_name: reservations-mf
+    ports:
+      - "3003:80"
+
+  payments-mf:
+    build:
+      context: ./frontend/payments-mf
+    container_name: payments-mf
+    ports:
+      - "3004:80"
 
 volumes:
   pgdata:
