@@ -8,6 +8,7 @@ import (
 	"paymentservice/internal/handlers"
 	"paymentservice/internal/models"
 	"testing"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -24,8 +25,7 @@ func (m *mockPaymentService) ProcessPayment(payment *models.Payment) error {
 func (m *mockPaymentService) GetPaymentByID(id int64) (*models.Payment, error) {
 	return &models.Payment{
 		ID:            id,
-		UserID:        1,
-		ReservationID: 1,
+		ReservationID: strconv.Itoa(1),
 		Amount:        100.0,
 		Status:        "success",
 		PaymentMethod: "credit_card",
@@ -37,7 +37,7 @@ func (m *mockPaymentService) GetPaymentsByUser(userID int64) ([]*models.Payment,
 		{
 			ID:            1,
 			UserID:        userID,
-			ReservationID: 1,
+			ReservationID: strconv.Itoa(1),
 			Amount:        100.0,
 			Status:        "success",
 			PaymentMethod: "credit_card",
@@ -49,6 +49,19 @@ func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
 	return nil
 }
 
+func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment, error) {
+	return []*models.Payment{
+		{
+			ID:            1,
+			UserID:        1,
+			ReservationID: strconv.Itoa(1),
+			Amount:        100.0,
+			Status:        "success",
+			PaymentMethod: "credit_card",
+		},
+	}, nil
+}
+
 func TestProcessPayment(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.Default()
@@ -57,7 +70,7 @@ func TestProcessPayment(t *testing.T) {
 
 	payment := models.Payment{
 		UserID:        1,
-		ReservationID: 1,
+		ReservationID: strconv.Itoa(1),
 		Amount:        100.0,
 		PaymentMethod: "credit_card",
 	}

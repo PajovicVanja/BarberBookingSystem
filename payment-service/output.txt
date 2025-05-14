@@ -99,125 +99,88 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PaymentHandler handles payment-related HTTP requests.
 type PaymentHandler struct {
 	service services.PaymentService
 }
 
-// RegisterPaymentRoutes registers payment endpoints.
 func RegisterPaymentRoutes(r *gin.Engine, service services.PaymentService) {
-	handler := &PaymentHandler{
-		service: service,
-	}
+	handler := &PaymentHandler{service: service}
 
-	paymentGroup := r.Group("/api/payments")
+	p := r.Group("/api/payments")
 	{
-		paymentGroup.POST("", handler.ProcessPayment)
-		paymentGroup.GET("/:id", handler.GetPaymentByID)
-		paymentGroup.GET("/user/:id", handler.GetPaymentsByUser)
-		paymentGroup.POST("/webhook", handler.HandleWebhook)
+		p.POST("", handler.ProcessPayment)
+		p.GET("/:id", handler.GetPaymentByID)
+		p.GET("/user/:id", handler.GetPaymentsByUser)
+		p.GET("/barber/:id", handler.GetPaymentsByBarber)
+		p.POST("/webhook", handler.HandleWebhook)
 	}
 }
 
-// ProcessPayment godoc
-// @Summary Process a new payment
-// @Description Process a new payment for a booking
-// @Tags payments
-// @Accept json
-// @Produce json
-// @Param payment body models.Payment true "Payment Information"
-// @Success 200 {object} models.Payment
-// @Failure 400 {object} map[string]interface{}
-// @Router /api/payments [post]
 func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 	var payment models.Payment
 	if err := c.ShouldBindJSON(&payment); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	if err := h.service.ProcessPayment(&payment); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, payment)
 }
 
-// GetPaymentByID godoc
-// @Summary Get payment details by ID
-// @Description Retrieve payment details by payment ID
-// @Tags payments
-// @Produce json
-// @Param id path int true "Payment ID"
-// @Success 200 {object} models.Payment
-// @Failure 404 {object} map[string]interface{}
-// @Router /api/payments/{id} [get]
 func (h *PaymentHandler) GetPaymentByID(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment ID"})
 		return
 	}
-
 	payment, err := h.service.GetPaymentByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
 		return
 	}
-
 	c.JSON(http.StatusOK, payment)
 }
 
-// GetPaymentsByUser godoc
-// @Summary Get payment history for a user
-// @Description Retrieve all payments for a specific user
-// @Tags payments
-// @Produce json
-// @Param id path int true "User ID"
-// @Success 200 {array} models.Payment
-// @Failure 404 {object} map[string]interface{}
-// @Router /api/payments/user/{id} [get]
 func (h *PaymentHandler) GetPaymentsByUser(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := strconv.ParseInt(idStr, 10, 64)
+	uid, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
-
-	payments, err := h.service.GetPaymentsByUser(userID)
+	payments, err := h.service.GetPaymentsByUser(uid)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no payments found for user"})
 		return
 	}
-
 	c.JSON(http.StatusOK, payments)
 }
 
-// HandleWebhook godoc
-// @Summary Handle payment gateway webhooks
-// @Description Process webhook notifications from the payment gateway
-// @Tags payments
-// @Accept json
-// @Produce json
-// @Param payload body map[string]interface{} true "Webhook Payload"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]interface{}
-// @Router /api/payments/webhook [post]
+func (h *PaymentHandler) GetPaymentsByBarber(c *gin.Context) {
+	bid, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid barber ID"})
+		return
+	}
+	payments, err := h.service.GetPaymentsByBarber(bid)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no payments found for barber"})
+		return
+	}
+	c.JSON(http.StatusOK, payments)
+}
+
 func (h *PaymentHandler) HandleWebhook(c *gin.Context) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	if err := h.service.HandleWebhook(payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"status": "webhook processed"})
 }
 
@@ -412,7 +375,8 @@ import "time"
 type Payment struct {
 	ID            int64     `json:"id" db:"id"`
 	UserID        int64     `json:"user_id" db:"user_id"`
-	ReservationID int64     `json:"reservation_id" db:"reservation_id"`
+	ReservationID string    `json:"reservation_id" db:"reservation_id"`
+	BarberID      int64     `json:"barber_id" db:"barber_id"`
 	Amount        float64   `json:"amount" db:"amount"`
 	Status        string    `json:"status" db:"status"`
 	PaymentMethod string    `json:"payment_method" db:"payment_method"`
@@ -425,15 +389,16 @@ package repository
 
 import (
 	"database/sql"
+	"log"
 	"paymentservice/internal/models"
 	"time"
-	"log"
 )
 
 type PaymentRepository interface {
 	Create(payment *models.Payment) error
 	GetByID(id int64) (*models.Payment, error)
 	GetByUserID(userID int64) ([]*models.Payment, error)
+	GetByBarberID(barberID int64) ([]*models.Payment, error)
 }
 
 type paymentRepository struct {
@@ -446,8 +411,20 @@ func NewPaymentRepository(db *sql.DB) PaymentRepository {
 
 // Create inserts a new payment record into the database.
 func (r *paymentRepository) Create(payment *models.Payment) error {
-	query := "INSERT INTO payments (user_id, reservation_id, amount, status, payment_method, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-	result, err := r.db.Exec(query, payment.UserID, payment.ReservationID, payment.Amount, payment.Status, payment.PaymentMethod, time.Now())
+	query := `
+	INSERT INTO payments
+	  (user_id, reservation_id, barber_id, amount, status, payment_method, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)`
+	result, err := r.db.Exec(
+		query,
+		payment.UserID,
+		payment.ReservationID,
+		payment.BarberID,
+		payment.Amount,
+		payment.Status,
+		payment.PaymentMethod,
+		time.Now(),
+	)
 	if err != nil {
 		return err
 	}
@@ -460,21 +437,35 @@ func (r *paymentRepository) Create(payment *models.Payment) error {
 }
 
 func (r *paymentRepository) GetByID(id int64) (*models.Payment, error) {
-    query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE id = ?"
-    row := r.db.QueryRow(query, id)
-    var payment models.Payment
-    err := row.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
-    if err != nil {
-        // Log the error to see what exactly is happening.
-        log.Printf("Error retrieving payment with id=%d: %v", id, err)
-        return nil, err
-    }
-    return &payment, nil
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE id = ?`
+	row := r.db.QueryRow(query, id)
+
+	var p models.Payment
+	err := row.Scan(
+		&p.ID,
+		&p.UserID,
+		&p.ReservationID,
+		&p.BarberID,
+		&p.Amount,
+		&p.Status,
+		&p.PaymentMethod,
+		&p.CreatedAt,
+	)
+	if err != nil {
+		log.Printf("Error retrieving payment id=%d: %v", id, err)
+		return nil, err
+	}
+	return &p, nil
 }
 
-// GetByUserID retrieves all payment records for a given user.
 func (r *paymentRepository) GetByUserID(userID int64) ([]*models.Payment, error) {
-	query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE user_id = ?"
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE user_id = ?`
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
 		return nil, err
@@ -483,12 +474,51 @@ func (r *paymentRepository) GetByUserID(userID int64) ([]*models.Payment, error)
 
 	var payments []*models.Payment
 	for rows.Next() {
-		var payment models.Payment
-		err := rows.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
-		if err != nil {
+		var p models.Payment
+		if err := rows.Scan(
+			&p.ID,
+			&p.UserID,
+			&p.ReservationID,
+			&p.BarberID,
+			&p.Amount,
+			&p.Status,
+			&p.PaymentMethod,
+			&p.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
-		payments = append(payments, &payment)
+		payments = append(payments, &p)
+	}
+	return payments, nil
+}
+
+func (r *paymentRepository) GetByBarberID(barberID int64) ([]*models.Payment, error) {
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE barber_id = ?`
+	rows, err := r.db.Query(query, barberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payments []*models.Payment
+	for rows.Next() {
+		var p models.Payment
+		if err := rows.Scan(
+			&p.ID,
+			&p.UserID,
+			&p.ReservationID,
+			&p.BarberID,
+			&p.Amount,
+			&p.Status,
+			&p.PaymentMethod,
+			&p.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		payments = append(payments, &p)
 	}
 	return payments, nil
 }
@@ -510,7 +540,11 @@ func NewMySQLDB(dsn string) (*sql.DB, error) {
 package services
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
 	"paymentservice/internal/messaging"
 	"paymentservice/internal/models"
 	"paymentservice/internal/repository"
@@ -520,6 +554,7 @@ type PaymentService interface {
 	ProcessPayment(payment *models.Payment) error
 	GetPaymentByID(id int64) (*models.Payment, error)
 	GetPaymentsByUser(userID int64) ([]*models.Payment, error)
+	GetPaymentsByBarber(barberID int64) ([]*models.Payment, error)
 	HandleWebhook(data map[string]interface{}) error
 }
 
@@ -535,32 +570,47 @@ func NewPaymentService(repo repository.PaymentRepository, mq messaging.MessageQu
 	}
 }
 
-// ProcessPayment validates the reservation asynchronously,
-// processes the payment, saves it to the DB, and publishes an event.
 func (s *paymentService) ProcessPayment(payment *models.Payment) error {
-	// Simulate asynchronous validation with the Reservation Service.
-	valid := make(chan bool)
-	go func() {
-		// In a real system, you would perform an HTTP call or similar.
-		valid <- true
-	}()
-	if !<-valid {
-		return errors.New("invalid reservation")
+	// 🔍 1) Fetch the reservation to ensure it’s been accepted
+	url := fmt.Sprintf("http://reservation-service:8000/api/reservations/%s", payment.ReservationID)
+	resp, err := http.Get(url)
+	if err != nil || resp.StatusCode != 200 {
+		return errors.New("could not fetch reservation")
+	}
+	defer resp.Body.Close()
+
+	// The reservation endpoint returns a Reservation JSON directly
+	var res struct {
+		ID             string `json:"id"`
+		UserID         string `json:"user_id"`
+		BarberID       string `json:"barber_id"`
+		AppointmentTime string `json:"appointment_time"`
+		Status         string `json:"status"`
+		Message        string `json:"message,omitempty"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return errors.New("error decoding reservation")
+	}
+	if res.Status != "accepted" {
+		return errors.New("reservation not accepted")
 	}
 
-	// Process the payment (simulate success).
-	payment.Status = "success"
+	// 🔖 2) Record which barber this payment is for
+	barberID, err := strconv.ParseInt(res.BarberID, 10, 64)
+	if err != nil {
+		return errors.New("invalid barber ID in reservation")
+	}
+	payment.BarberID = barberID
 
-	// Save the payment record in the database.
+	// ✔ 3) Process & save the payment
+	payment.Status = "success"
 	if err := s.repo.Create(payment); err != nil {
 		return err
 	}
 
-	// Publish the processed payment event asynchronously.
+	// 📣 4) Publish payment.processed event
 	go func(p models.Payment) {
-		if err := s.mq.Publish("payment.processed", p); err != nil {
-			// In production, log the error appropriately.
-		}
+		_ = s.mq.Publish("payment.processed", p)
 	}(*payment)
 
 	return nil
@@ -574,9 +624,12 @@ func (s *paymentService) GetPaymentsByUser(userID int64) ([]*models.Payment, err
 	return s.repo.GetByUserID(userID)
 }
 
+func (s *paymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment, error) {
+	return s.repo.GetByBarberID(barberID)
+}
+
 func (s *paymentService) HandleWebhook(data map[string]interface{}) error {
-	// Process webhook data.
-	// For example, update payment status based on webhook event.
+	// implement as needed
 	return nil
 }
 
@@ -592,6 +645,7 @@ import (
 	"paymentservice/internal/handlers"
 	"paymentservice/internal/models"
 	"testing"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -608,8 +662,7 @@ func (m *mockPaymentService) ProcessPayment(payment *models.Payment) error {
 func (m *mockPaymentService) GetPaymentByID(id int64) (*models.Payment, error) {
 	return &models.Payment{
 		ID:            id,
-		UserID:        1,
-		ReservationID: 1,
+		ReservationID: strconv.Itoa(1),
 		Amount:        100.0,
 		Status:        "success",
 		PaymentMethod: "credit_card",
@@ -621,7 +674,7 @@ func (m *mockPaymentService) GetPaymentsByUser(userID int64) ([]*models.Payment,
 		{
 			ID:            1,
 			UserID:        userID,
-			ReservationID: 1,
+			ReservationID: strconv.Itoa(1),
 			Amount:        100.0,
 			Status:        "success",
 			PaymentMethod: "credit_card",
@@ -633,6 +686,19 @@ func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
 	return nil
 }
 
+func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment, error) {
+	return []*models.Payment{
+		{
+			ID:            1,
+			UserID:        1,
+			ReservationID: strconv.Itoa(1),
+			Amount:        100.0,
+			Status:        "success",
+			PaymentMethod: "credit_card",
+		},
+	}, nil
+}
+
 func TestProcessPayment(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.Default()
@@ -641,7 +707,7 @@ func TestProcessPayment(t *testing.T) {
 
 	payment := models.Payment{
 		UserID:        1,
-		ReservationID: 1,
+		ReservationID: strconv.Itoa(1),
 		Amount:        100.0,
 		PaymentMethod: "credit_card",
 	}

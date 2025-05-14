@@ -12,10 +12,12 @@ class ReservationCreate(ReservationBase):
 
 class ReservationUpdate(BaseModel):
     appointment_time: Optional[datetime] = None
-    status: Optional[str] = None
+    status: Optional[str] = None           # "accepted" | "declined"
+    message: Optional[str] = None          # barber’s note on decline
 
 class Reservation(ReservationBase):
     id: str
     status: str = "pending"
+    message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

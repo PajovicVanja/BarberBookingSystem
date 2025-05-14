@@ -10,7 +10,7 @@ const usersApi = axios.create({
   baseURL: 'http://localhost:4000/api/users',
 });
 
-// small helper to decode JWT payload
+// helper to decode JWT payload
 function decodeToken(token) {
   try {
     return JSON.parse(atob(token.split('.')[1]));
@@ -30,43 +30,44 @@ function CreateReservation() {
   });
 
   useEffect(() => {
-    // fetch all barbers
     if (token) {
       usersApi
         .get('/barbers', { headers: { Authorization: `Bearer ${token}` } })
         .then(res => setBarbers(res.data))
         .catch(console.error);
-    }
-  }, [token]);
 
-     const handleSubmit = async e => {
-         e.preventDefault();
-         // build a full ISO timestamp
-              // force both IDs to strings, and build a valid ISO datetime
-              const payload = {
-                user_id:      String(form.user_id),
-                barber_id:    String(form.barber_id),
-                appointment_time: new Date(form.appointment_time).toISOString(),
-              };
-         console.log('→ POST /api/reservations payload:', payload);
-     
-         try {
-           const res = await reservationApi.post('', payload, {
-             headers: { Authorization: `Bearer ${token}` },
-           });
-           alert('Reservation created: ' +  JSON.stringify(res.data));
-         } catch (err) {
-           // Axios wraps the server body on err.response.data
-           console.error('❌ Reservation error response:', err.response?.data || err);
-           alert('Failed to create reservation:\n'  +
-                 JSON.stringify(err.response?.data, null, 2));
-         }
-       };
+      setForm(f => ({ ...f, user_id }));
+    }
+  }, [token, user_id]);
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    const payload = {
+      // ⚠️ FastAPI expects strings here
+      user_id: String(user_id),
+      barber_id: String(form.barber_id),
+      appointment_time: new Date(form.appointment_time).toISOString(),
+    };
+
+    console.log('→ POST /api/reservations payload:', payload);
+
+    try {
+      const res = await reservationApi.post(
+        '',
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Reservation created: ' + JSON.stringify(res.data));
+    } catch (err) {
+      console.error('❌ Reservation error response:', err.response?.data || err);
+      alert('Failed to create reservation:\n' +
+            JSON.stringify(err.response?.data, null, 2));
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit}>
       <h2>Create Reservation</h2>
-      {/* show current user but don’t let them change it */}
       <p><strong>User:</strong> {user_id}</p>
 
       <label>
@@ -123,6 +124,73 @@ function ListReservations() {
         {reservations.map(r => (
           <li key={r.id}>
             {new Date(r.appointment_time).toLocaleString()} — {r.status}
+            {r.status === 'declined' && (
+              <div className="decline-message">{r.message}</div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BarberReservations() {
+  const token = localStorage.getItem('token');
+  const { id: barber_id } = decodeToken(token);
+  const [reservations, setReservations] = useState([]);
+  const [msgs, setMsgs] = useState({}); // resId → decline message
+
+  useEffect(() => {
+    reservationApi
+      .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setReservations(res.data))
+      .catch(console.error);
+  }, [barber_id, token]);
+
+  function respond(resId, accept) {
+    const message = msgs[resId] || '';
+    reservationApi
+      .patch(
+        `/${resId}`,
+        { status: accept ? 'accepted' : 'declined', message },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(() => {
+        setReservations(rs =>
+          rs.map(r =>
+            r.id === resId
+              ? { ...r, status: accept ? 'accepted' : 'declined', message }
+              : r
+          )
+        );
+      })
+      .catch(console.error);
+  }
+
+  return (
+    <div>
+      <h2>Incoming Reservations</h2>
+      <ul>
+        {reservations.map(r => (
+          <li key={r.id}>
+            Customer #{r.user_id} —{' '}
+            {new Date(r.appointment_time).toLocaleString()} — {r.status}
+            {r.status === 'pending' && (
+              <>
+                <button onClick={() => respond(r.id, true)}>Accept</button>
+                <textarea
+                  placeholder="Decline message"
+                  value={msgs[r.id] || ''}
+                  onChange={e =>
+                    setMsgs({ ...msgs, [r.id]: e.target.value })
+                  }
+                />
+                <button onClick={() => respond(r.id, false)}>Decline</button>
+              </>
+            )}
+            {r.status === 'declined' && (
+              <div className="decline-message">{r.message}</div>
+            )}
           </li>
         ))}
       </ul>
@@ -131,10 +199,19 @@ function ListReservations() {
 }
 
 export default function App() {
+  const token = localStorage.getItem('token');
+  const { role } = decodeToken(token);
+
   return (
     <Routes>
-      <Route path="/" element={<CreateReservation />} />
-      <Route path="/list" element={<ListReservations />} />
+      {role === 'barber' ? (
+        <Route path="/" element={<BarberReservations />} />
+      ) : (
+        <>
+          <Route path="/" element={<CreateReservation />} />
+          <Route path="list" element={<ListReservations />} />
+        </>
+      )}
     </Routes>
   );
 }

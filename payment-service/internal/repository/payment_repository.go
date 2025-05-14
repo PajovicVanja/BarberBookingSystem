@@ -2,15 +2,16 @@ package repository
 
 import (
 	"database/sql"
+	"log"
 	"paymentservice/internal/models"
 	"time"
-	"log"
 )
 
 type PaymentRepository interface {
 	Create(payment *models.Payment) error
 	GetByID(id int64) (*models.Payment, error)
 	GetByUserID(userID int64) ([]*models.Payment, error)
+	GetByBarberID(barberID int64) ([]*models.Payment, error)
 }
 
 type paymentRepository struct {
@@ -23,8 +24,20 @@ func NewPaymentRepository(db *sql.DB) PaymentRepository {
 
 // Create inserts a new payment record into the database.
 func (r *paymentRepository) Create(payment *models.Payment) error {
-	query := "INSERT INTO payments (user_id, reservation_id, amount, status, payment_method, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-	result, err := r.db.Exec(query, payment.UserID, payment.ReservationID, payment.Amount, payment.Status, payment.PaymentMethod, time.Now())
+	query := `
+	INSERT INTO payments
+	  (user_id, reservation_id, barber_id, amount, status, payment_method, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)`
+	result, err := r.db.Exec(
+		query,
+		payment.UserID,
+		payment.ReservationID,
+		payment.BarberID,
+		payment.Amount,
+		payment.Status,
+		payment.PaymentMethod,
+		time.Now(),
+	)
 	if err != nil {
 		return err
 	}
@@ -37,21 +50,35 @@ func (r *paymentRepository) Create(payment *models.Payment) error {
 }
 
 func (r *paymentRepository) GetByID(id int64) (*models.Payment, error) {
-    query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE id = ?"
-    row := r.db.QueryRow(query, id)
-    var payment models.Payment
-    err := row.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
-    if err != nil {
-        // Log the error to see what exactly is happening.
-        log.Printf("Error retrieving payment with id=%d: %v", id, err)
-        return nil, err
-    }
-    return &payment, nil
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE id = ?`
+	row := r.db.QueryRow(query, id)
+
+	var p models.Payment
+	err := row.Scan(
+		&p.ID,
+		&p.UserID,
+		&p.ReservationID,
+		&p.BarberID,
+		&p.Amount,
+		&p.Status,
+		&p.PaymentMethod,
+		&p.CreatedAt,
+	)
+	if err != nil {
+		log.Printf("Error retrieving payment id=%d: %v", id, err)
+		return nil, err
+	}
+	return &p, nil
 }
 
-// GetByUserID retrieves all payment records for a given user.
 func (r *paymentRepository) GetByUserID(userID int64) ([]*models.Payment, error) {
-	query := "SELECT id, user_id, reservation_id, amount, status, payment_method, created_at FROM payments WHERE user_id = ?"
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE user_id = ?`
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
 		return nil, err
@@ -60,12 +87,51 @@ func (r *paymentRepository) GetByUserID(userID int64) ([]*models.Payment, error)
 
 	var payments []*models.Payment
 	for rows.Next() {
-		var payment models.Payment
-		err := rows.Scan(&payment.ID, &payment.UserID, &payment.ReservationID, &payment.Amount, &payment.Status, &payment.PaymentMethod, &payment.CreatedAt)
-		if err != nil {
+		var p models.Payment
+		if err := rows.Scan(
+			&p.ID,
+			&p.UserID,
+			&p.ReservationID,
+			&p.BarberID,
+			&p.Amount,
+			&p.Status,
+			&p.PaymentMethod,
+			&p.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
-		payments = append(payments, &payment)
+		payments = append(payments, &p)
+	}
+	return payments, nil
+}
+
+func (r *paymentRepository) GetByBarberID(barberID int64) ([]*models.Payment, error) {
+	query := `
+	SELECT id, user_id, reservation_id, barber_id, amount, status, payment_method, created_at
+	FROM payments
+	WHERE barber_id = ?`
+	rows, err := r.db.Query(query, barberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payments []*models.Payment
+	for rows.Next() {
+		var p models.Payment
+		if err := rows.Scan(
+			&p.ID,
+			&p.UserID,
+			&p.ReservationID,
+			&p.BarberID,
+			&p.Amount,
+			&p.Status,
+			&p.PaymentMethod,
+			&p.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		payments = append(payments, &p)
 	}
 	return payments, nil
 }

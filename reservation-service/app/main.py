@@ -4,11 +4,8 @@ from app import crud
 from app.utils.rabbitmq_consumer import run_consumer_in_background
 import uvicorn
 from app.utils.logger import logger
-from bson.errors import InvalidId  # ⬅️ Add this import
+from bson.errors import InvalidId
 from typing import List
-import logging
-logging.basicConfig(level=logging.DEBUG)  # 👈 enable DEBUG level globally
-
 
 app = FastAPI(title="Reservation Service")
 
@@ -37,10 +34,12 @@ async def get_reservation(reservation_id: str):
 @app.get("/api/reservations/user/{user_id}", response_model=List[Reservation])
 async def list_user_reservations(user_id: str):
     logger.info(f"🔍 Fetching reservations for user: {user_id}")
-    reservations = await crud.list_user_reservations(user_id)
-    logger.info(f"Found {len(reservations)} reservations")
-    return reservations
+    return await crud.list_user_reservations(user_id)
 
+@app.get("/api/reservations/barber/{barber_id}", response_model=List[Reservation])
+async def list_barber_reservations(barber_id: str):
+    logger.info(f"🔍 Fetching reservations for barber: {barber_id}")
+    return await crud.list_barber_reservations(barber_id)
 
 @app.patch("/api/reservations/{reservation_id}", response_model=Reservation)
 async def update_reservation(reservation_id: str, reservation_update: ReservationUpdate):
@@ -62,11 +61,8 @@ async def delete_reservation(reservation_id: str):
 async def confirm_reservation(reservation: ReservationCreate):
     logger.info("Confirming reservation payment")
     created = await crud.create_reservation(reservation)
-    # Publish confirmation message to RabbitMQ
     from app.utils.rabbitmq import send_confirmation
     send_confirmation(created.id)
-    # Update status to confirmed
-    from app.models import ReservationUpdate
     update = ReservationUpdate(status="confirmed")
     updated = await crud.update_reservation(created.id, update)
     return updated
