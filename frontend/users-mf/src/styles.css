@@ -1,0 +1,120 @@
+/* src/styles.css */
+
+/* color palette */
+:root {
+  --barber-red:    #c0392b;
+  --barber-blue:   #2980b9;
+  --light-gray:    #f5f5f5;
+  --dark-text:     #2c3e50;
+}
+
+/* global resets & body */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--light-gray);
+  color: var(--dark-text);
+  line-height: 1.6;
+}
+
+/* barber-pole stripe at top */
+.barber-pole {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--barber-red) 0,
+    var(--barber-red) 10px,
+    var(--barber-blue) 10px,
+    var(--barber-blue) 20px
+  );
+}
+
+/* nav bar */
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 2px solid var(--barber-red);
+}
+.navbar .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-right: auto;
+}
+.navbar a,
+.navbar button {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: var(--dark-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.navbar a:hover,
+.navbar button:hover {
+  color: var(--barber-red);
+}
+
+/* container wrapper */
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* cards for reservations/payments/etc. */
+.card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* forms */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+label {
+  font-weight: 600;
+}
+input, select, textarea {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  color: white;
+  background: var(--barber-red);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button.secondary {
+  background: var(--barber-blue);
+}
+button:hover {
+  opacity: 0.9;
+}
+
+/* headings */
+h2 {
+  margin-top: 0;
+  color: var(--barber-red);
+}
+
+/* little scissors icon utility */
+.icon-scissors::before {
+  content: "✂️ ";
+}

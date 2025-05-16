@@ -1,28 +1,71 @@
+=== container\Dockerfile ===
+# ---------- 1) BUILD stage ----------------------------------------------------
+FROM node:18-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci            # install deps *inside the image*
+
+COPY . .
+RUN npm run build     # → creates /app/dist
+
+# ---------- 2) RUNTIME stage --------------------------------------------------
+FROM nginx:alpine
+
+# CORS + SPA fallback
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# remove default html and copy our dist
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+
+=== container\nginx.conf ===
+# nginx.conf  (place it next to each Dockerfile)
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+
+  # allow the JS to be loaded cross-origin
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Cross-Origin-Resource-Policy "cross-origin" always;
+
+  # history-fallback for SPA routes
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
+
 === container\package.json ===
 {
     "name": "container",
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "start": "webpack serve --env PORT=3001 --open",
-      "build": "webpack --mode production"
+        "start": "webpack serve --env PORT=3001 --open",
+        "build": "webpack --mode production"
     },
     "dependencies": {
-      "react": "^18.3.0",
-      "react-dom": "^18.3.0",
-      "react-router-dom": "^6.23.0"
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "react-router-dom": "^6.23.0"
     },
     "devDependencies": {
-      "@babel/core": "^7.24.5",
-      "@babel/preset-react": "^7.24.5",
-      "babel-loader": "^9.1.4",
-      "html-webpack-plugin": "^5.5.3",
-      "webpack": "^5.92.0",
-      "webpack-cli": "^5.1.4",
-      "webpack-dev-server": "^4.15.2"
+        "@babel/core": "^7.24.5",
+        "@babel/preset-react": "^7.24.5",
+        "babel-loader": "^9.1.4",
+        "css-loader": "^7.1.2",
+        "html-webpack-plugin": "^5.5.3",
+        "style-loader": "^4.0.0",
+        "webpack": "^5.92.0",
+        "webpack-cli": "^5.1.4",
+        "webpack-dev-server": "^4.15.2"
     }
-  }
-  
+}
+
 
 === container\public\index.html ===
 <!DOCTYPE html>
@@ -32,37 +75,64 @@
   <title>Barber Booking – Web UI</title>
 </head>
 <body>
+  <div class="barber-pole"></div>
   <div id="root"></div>
 </body>
 </html>
 
 
 === container\src\bootstrap.js ===
+// container/src/bootstrap.js
+import './styles.css';
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom';
 
 const UsersApp        = lazy(() => import('UsersMF/App'));
 const ReservationsApp = lazy(() => import('ReservationsMF/App'));
 const PaymentsApp     = lazy(() => import('PaymentsMF/App'));
 
- const Nav = () => {
-     const token = localStorage.getItem('token');
-     return (
-       <nav className="flex gap-6 p-4 shadow-md">
-         {!token && <Link to="/users/login">Login</Link>}
-         {!token && <Link to="/users/register">Register</Link>}
-         { token && <Link to="/users/profile">Profile</Link> }
-         <Link to="/reservations">Reservations</Link>
-         <Link to="/payments">Payments</Link>
-       </nav>
-     );
+const Nav = () => {
+  const token = localStorage.getItem('token');
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/users/login', { replace: true });
   };
+
+  return (
+    <nav className="navbar">
+      <div className="logo icon-scissors">Barber Booking</div>
+      {!token && <Link to="/users/login">Login</Link>}
+      {!token && <Link to="/users/register">Register</Link>}
+
+      {token && (
+        <>
+          <Link to="/users/profile">Profile</Link>
+          <button onClick={handleLogout}>Logout</button>
+        </>
+      )}
+
+      <Link to="/reservations">Reservations</Link>
+      <Link to="/payments">Payments</Link>
+    </nav>
+  );
+};
 
 const Shell = () => (
   <BrowserRouter>
     <Nav />
-    <Suspense fallback={<p className="p-4">Loading…</p>}>
+    <Suspense fallback={<p>Loading…</p>}>
       <Routes>
         <Route path="/" element={<Navigate to="/users/login" replace />} />
         <Route path="/users/*"        element={<UsersApp />} />
@@ -81,6 +151,129 @@ ReactDOM.createRoot(document.getElementById('root')).render(<Shell />);
 import('./bootstrap');
 
 
+=== container\src\styles.css ===
+/* src/styles.css */
+
+/* color palette */
+:root {
+  --barber-red:    #c0392b;
+  --barber-blue:   #2980b9;
+  --light-gray:    #f5f5f5;
+  --dark-text:     #2c3e50;
+}
+
+/* global resets & body */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--light-gray);
+  color: var(--dark-text);
+  line-height: 1.6;
+}
+
+/* barber-pole stripe at top */
+.barber-pole {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--barber-red) 0,
+    var(--barber-red) 10px,
+    var(--barber-blue) 10px,
+    var(--barber-blue) 20px
+  );
+}
+
+/* nav bar */
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 2px solid var(--barber-red);
+}
+.navbar .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-right: auto;
+}
+.navbar a,
+.navbar button {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: var(--dark-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.navbar a:hover,
+.navbar button:hover {
+  color: var(--barber-red);
+}
+
+/* container wrapper */
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* cards for reservations/payments/etc. */
+.card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* forms */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+label {
+  font-weight: 600;
+}
+input, select, textarea {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  color: white;
+  background: var(--barber-red);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button.secondary {
+  background: var(--barber-blue);
+}
+button:hover {
+  opacity: 0.9;
+}
+
+/* headings */
+h2 {
+  margin-top: 0;
+  color: var(--barber-red);
+}
+
+/* little scissors icon utility */
+.icon-scissors::before {
+  content: "✂️ ";
+}
+
+
 === container\webpack.config.js ===
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { ModuleFederationPlugin } = require('webpack').container;
@@ -89,18 +282,20 @@ const path = require('path');
 module.exports = (_, argv) => ({
   entry: './src/bootstrap.js',
   mode: argv.mode || 'development',
-  devServer: { port: 3001, historyApiFallback: true },
-  output: { publicPath: 'auto', clean: true },
+ devServer: { port: 3001, historyApiFallback: true },
+  output: {
+    publicPath: 'auto',
+    clean: true,
+   crossOriginLoading: 'anonymous',
+  },
   resolve: { extensions: ['.js', '.jsx'] },
   module: {
     rules: [
+      { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
       {
         test: /\.jsx?$/,
         exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-          options: { presets: ['@babel/preset-react'] }
-        }
+        use: { loader: 'babel-loader', options: { presets: ['@babel/preset-react'] } }
       }
     ]
   },
@@ -109,19 +304,60 @@ module.exports = (_, argv) => ({
     new ModuleFederationPlugin({
       name: 'container',
       remotes: {
-        UsersMF: 'usersMf@http://localhost:3002/remoteEntry.js',
+        UsersMF:        'usersMf@http://localhost:3002/remoteEntry.js',
         ReservationsMF: 'reservationsMf@http://localhost:3003/remoteEntry.js',
-        PaymentsMF: 'paymentsMf@http://localhost:3004/remoteEntry.js'
+        PaymentsMF:     'paymentsMf@http://localhost:3004/remoteEntry.js'
       },
       shared: {
-        react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
-        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
+        react:             { singleton: true, eager: true, requiredVersion: false },
+        'react-dom':       { singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom':{ singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]
 });
 
+
+=== payments-mf\Dockerfile ===
+# ---------- 1) BUILD stage ----------------------------------------------------
+FROM node:18-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci            # install deps *inside the image*
+
+COPY . .
+RUN npm run build     # → creates /app/dist
+
+# ---------- 2) RUNTIME stage --------------------------------------------------
+FROM nginx:alpine
+
+# CORS + SPA fallback
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# remove default html and copy our dist
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+
+=== payments-mf\nginx.conf ===
+# nginx.conf  (place it next to each Dockerfile)
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+
+  # allow the JS to be loaded cross-origin
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Cross-Origin-Resource-Policy "cross-origin" always;
+
+  # history-fallback for SPA routes
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
 
 === payments-mf\package.json ===
 {
@@ -129,26 +365,28 @@ module.exports = (_, argv) => ({
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "start": "webpack serve --env PORT=3004 --open", 
-      "build": "webpack --mode production"
+        "start": "webpack serve --env PORT=3004 --open",
+        "build": "webpack --mode production"
     },
     "dependencies": {
-      "axios": "^1.8.0",
-      "react": "^18.3.0",
-      "react-dom": "^18.3.0",
-      "react-router-dom": "^6.23.0"
+        "axios": "^1.8.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "react-router-dom": "^6.23.0"
     },
     "devDependencies": {
-      "@babel/core": "^7.24.5",
-      "@babel/preset-react": "^7.24.5",
-      "babel-loader": "^9.1.4",
-      "html-webpack-plugin": "^5.5.3",
-      "webpack": "^5.92.0",
-      "webpack-cli": "^5.1.4",
-      "webpack-dev-server": "^4.15.2"
+        "@babel/core": "^7.24.5",
+        "@babel/preset-react": "^7.24.5",
+        "babel-loader": "^9.1.4",
+        "css-loader": "^7.1.2",
+        "html-webpack-plugin": "^5.5.3",
+        "style-loader": "^4.0.0",
+        "webpack": "^5.92.0",
+        "webpack-cli": "^5.1.4",
+        "webpack-dev-server": "^4.15.2"
     }
-  }
-  
+}
+
 
 === payments-mf\public\index.html ===
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>payments MF</title></head>
@@ -156,11 +394,12 @@ module.exports = (_, argv) => ({
 
 
 === payments-mf\src\App.js ===
+// payments-mf/src/App.js
+import './styles.css';               // ← add this
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
 
-// point at your web gateway
 const paymentsApi = axios.create({
   baseURL: 'http://localhost:4000/api/payments',
 });
@@ -168,7 +407,6 @@ const reservationsApi = axios.create({
   baseURL: 'http://localhost:4000/api/reservations',
 });
 
-// helper to decode JWT payload
 function decodeToken(token) {
   try {
     return JSON.parse(atob(token.split('.')[1]));
@@ -178,7 +416,7 @@ function decodeToken(token) {
 }
 
 function CreatePayment() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: user_id } = decodeToken(token);
   const [reservations, setReservations] = useState([]);
   const [form, setForm] = useState({
@@ -191,15 +429,14 @@ function CreatePayment() {
   useEffect(() => {
     if (user_id) {
       reservationsApi
-        .get(`/user/${user_id}`)
+        .get(`/user/${user_id}`, { headers: { Authorization: `Bearer ${token}` } })
         .then(res => {
-          // only show accepted
           setReservations(res.data.filter(r => r.status === 'accepted'));
+          setForm(f => ({ ...f, user_id }));
         })
         .catch(console.error);
-      setForm(f => ({ ...f, user_id }));
     }
-  }, [user_id]);
+  }, [user_id, token]);
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -209,68 +446,69 @@ function CreatePayment() {
       amount:         parseFloat(form.amount),
       payment_method: form.payment_method,
     };
-
     try {
       const res = await paymentsApi.post('', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Payment processed: ' + JSON.stringify(res.data));
     } catch (err) {
-      console.error('❌ Payment error response:', err.response?.data || err);
-      alert('Failed to process payment:\n' +
-            JSON.stringify(err.response?.data, null, 2));
+      console.error('❌', err);
+      alert('Failed to process payment:\n' + JSON.stringify(err.response?.data, null, 2));
     }
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Create Payment</h2>
-      <p><strong>User:</strong> {user_id}</p>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">Create Payment</h2>
+        <p><strong>User:</strong> {user_id}</p>
+        <form onSubmit={handleSubmit}>
+          <label>
+            Reservation:
+            <select
+              value={form.reservation_id}
+              onChange={e => setForm({ ...form, reservation_id: e.target.value })}
+              required
+            >
+              <option value="">— choose reservation —</option>
+              {reservations.map(r => (
+                <option key={r.id} value={r.id}>
+                  {new Date(r.appointment_time).toLocaleString()} ({r.status})
+                </option>
+              ))}
+            </select>
+          </label>
 
-      <label>
-        Reservation:
-        <select
-          value={form.reservation_id}
-          onChange={e => setForm({ ...form, reservation_id: e.target.value })}
-          required
-        >
-          <option value="">— choose reservation —</option>
-          {reservations.map(r => (
-            <option key={r.id} value={r.id}>
-              {new Date(r.appointment_time).toLocaleString()} ({r.status})
-            </option>
-          ))}
-        </select>
-      </label>
+          <label>
+            Amount (€):
+            <input
+              type="number"
+              value={form.amount}
+              onChange={e => setForm({ ...form, amount: e.target.value })}
+              required
+            />
+          </label>
 
-      <label>
-        Amount (€):
-        <input
-          type="number"
-          value={form.amount}
-          onChange={e => setForm({ ...form, amount: e.target.value })}
-          required
-        />
-      </label>
+          <label>
+            Method:
+            <select
+              value={form.payment_method}
+              onChange={e => setForm({ ...form, payment_method: e.target.value })}
+            >
+              <option value="cash">Cash</option>
+              <option value="credit_card">Credit Card</option>
+            </select>
+          </label>
 
-      <label>
-        Method:
-        <select
-          value={form.payment_method}
-          onChange={e => setForm({ ...form, payment_method: e.target.value })}
-        >
-          <option value="cash">Cash</option>
-          <option value="credit_card">Credit Card</option>
-        </select>
-      </label>
-
-      <button type="submit">Pay</button>
-    </form>
+          <button type="submit">Pay</button>
+        </form>
+      </div>
+    </div>
   );
 }
 
 function ListPayments() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: user_id } = decodeToken(token);
   const [payments, setPayments] = useState([]);
 
@@ -281,46 +519,64 @@ function ListPayments() {
         .then(res => setPayments(res.data))
         .catch(console.error);
     }
-  }, [user_id]);
+  }, [user_id, token]);
 
   return (
-    <div>
-      <h2>My Payments</h2>
-      <ul>
-        {payments.map(p => (
-          <li key={p.id}>
-            €{p.amount.toFixed(2)} — {p.status} (on {new Date(p.created_at).toLocaleString()})
-          </li>
-        ))}
-      </ul>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">My Payments</h2>
+        <ul>
+          {payments.map(p => (
+            <li key={p.id}>
+              €{p.amount.toFixed(2)} — {p.status} (on {new Date(p.created_at).toLocaleString()})
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
 
 function BarberPayments() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: barber_id } = decodeToken(token);
   const [payments, setPayments] = useState([]);
 
   useEffect(() => {
-    paymentsApi
-      .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setPayments(res.data))
-      .catch(console.error);
-  }, [barber_id]);
+    if (barber_id) {
+      paymentsApi
+        .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => setPayments(res.data))
+        .catch(console.error);
+    }
+  }, [barber_id, token]);
+
+  const handleDelete = async id => {
+    try {
+      await paymentsApi.delete(`/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setPayments(ps => ps.filter(p => p.id !== id));
+    } catch (err) {
+      console.error('❌', err);
+      alert('Failed to delete payment');
+    }
+  };
 
   return (
-    <div>
-      <h2>Barber Payments</h2>
-      <ul>
-        {payments.map(p => (
-          <li key={p.id}>
-            <strong>Customer #{p.user_id}</strong> paid <strong>€{p.amount.toFixed(2)}</strong> via <em>{p.payment_method}</em>
-            <br/>
-            <small>{new Date(p.created_at).toLocaleString()}</small>
-          </li>
-        ))}
-      </ul>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">Barber Payments</h2>
+        <ul>
+          {payments.map(p => (
+            <li key={p.id} style={{ marginBottom: 16 }}>
+              <div>
+                <strong>Customer #{p.user_id}</strong> paid <strong>€{p.amount.toFixed(2)}</strong> via <em>{p.payment_method}</em>
+              </div>
+              <div><small>{new Date(p.created_at).toLocaleString()}</small></div>
+              <button onClick={() => handleDelete(p.id)}>Delete</button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -332,11 +588,11 @@ export default function App() {
   return (
     <Routes>
       {role === 'barber' ? (
-        <Route path="/" element={<BarberPayments />} />
+        <Route path="/payments" element={<BarberPayments />} />
       ) : (
         <>
-          <Route path="/" element={<CreatePayment />} />
-          <Route path="list" element={<ListPayments />} />
+          <Route path="/payments" element={<CreatePayment />} />
+          <Route path="/payments/list" element={<ListPayments />} />
         </>
       )}
     </Routes>
@@ -345,6 +601,7 @@ export default function App() {
 
 
 === payments-mf\src\bootstrap.js ===
+import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -358,10 +615,8 @@ const mount = (el) => {
   );
 };
 
-// Export it for Module Federation
 export default mount;
 
-// If running standalone (npm start), mount immediately:
 if (process.env.NODE_ENV === 'development') {
   const root = document.getElementById('root');
   if (root) {
@@ -374,44 +629,224 @@ if (process.env.NODE_ENV === 'development') {
 import('./bootstrap');
 
 
+=== payments-mf\src\styles.css ===
+/* src/styles.css */
+
+/* color palette */
+:root {
+  --barber-red:    #c0392b;
+  --barber-blue:   #2980b9;
+  --light-gray:    #f5f5f5;
+  --dark-text:     #2c3e50;
+}
+
+/* global resets & body */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--light-gray);
+  color: var(--dark-text);
+  line-height: 1.6;
+}
+
+/* barber-pole stripe at top */
+.barber-pole {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--barber-red) 0,
+    var(--barber-red) 10px,
+    var(--barber-blue) 10px,
+    var(--barber-blue) 20px
+  );
+}
+
+/* nav bar */
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 2px solid var(--barber-red);
+}
+.navbar .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-right: auto;
+}
+.navbar a,
+.navbar button {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: var(--dark-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.navbar a:hover,
+.navbar button:hover {
+  color: var(--barber-red);
+}
+
+/* container wrapper */
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* cards for reservations/payments/etc. */
+.card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* forms */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+label {
+  font-weight: 600;
+}
+input, select, textarea {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  color: white;
+  background: var(--barber-red);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button.secondary {
+  background: var(--barber-blue);
+}
+button:hover {
+  opacity: 0.9;
+}
+
+/* headings */
+h2 {
+  margin-top: 0;
+  color: var(--barber-red);
+}
+
+/* little scissors icon utility */
+.icon-scissors::before {
+  content: "✂️ ";
+}
+
+
 === payments-mf\webpack.config.js ===
-const HtmlWebpackPlugin = require('html-webpack-plugin');
+// payments-mf/webpack.config.js
+const HtmlWebpackPlugin        = require('html-webpack-plugin');
 const { ModuleFederationPlugin } = require('webpack').container;
-const path = require('path');
 
 module.exports = (_, argv) => ({
-  entry: './src/bootstrap.js',
-  mode: argv.mode || 'development',
-  devServer: { port: 3004, historyApiFallback: true },
-  output: { publicPath: 'auto', clean: true },
-  resolve: { extensions: ['.js', '.jsx'] },
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-          options: { presets: ['@babel/preset-react'] }
-        }
-      }
-    ]
+  entry : './src/bootstrap.js',
+  mode  : argv.mode || 'development',
+
+  devServer : {
+    port              : 3004,
+    historyApiFallback: true,
+    headers           : {
+      'Access-Control-Allow-Origin' : '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
   },
-  plugins: [
+
+  optimization : { splitChunks: false, runtimeChunk: false },
+
+  output : {
+    publicPath         : 'auto',
+    clean              : true,
+    crossOriginLoading : 'anonymous',
+  },
+
+  resolve : { extensions: ['.js', '.jsx'] },
+
+  module  : {
+    rules : [
+      { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
+      {
+        test   : /\.jsx?$/,
+        exclude: /node_modules/,
+        use    : { loader: 'babel-loader', options: { presets: ['@babel/preset-react'] } },
+      },
+    ],
+  },
+
+  plugins : [
     new HtmlWebpackPlugin({ template: './public/index.html' }),
     new ModuleFederationPlugin({
-      name: 'paymentsMf',
+      name    : 'paymentsMf',
       filename: 'remoteEntry.js',
-      exposes: { './App': './src/App' },
-      shared: {
-          react:      { singleton: true, eager: true, requiredVersion: false },
-          'react-dom':{ singleton: true, eager: true, requiredVersion: false },
-          'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
-      }
-    })
-  ]
+      exposes : { './App': './src/App' },
+      shared  : {
+        react             : { singleton: true, eager: true, requiredVersion: false },
+        'react-dom'       : { singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false },
+      },
+    }),
+  ],
 });
 
+
+=== reservations-mf\Dockerfile ===
+# ---------- 1) BUILD stage ----------------------------------------------------
+FROM node:18-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci            # install deps *inside the image*
+
+COPY . .
+RUN npm run build     # → creates /app/dist
+
+# ---------- 2) RUNTIME stage --------------------------------------------------
+FROM nginx:alpine
+
+# CORS + SPA fallback
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# remove default html and copy our dist
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+
+=== reservations-mf\nginx.conf ===
+# nginx.conf  (place it next to each Dockerfile)
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+
+  # allow the JS to be loaded cross-origin
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Cross-Origin-Resource-Policy "cross-origin" always;
+
+  # history-fallback for SPA routes
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
 
 === reservations-mf\package.json ===
 {
@@ -419,26 +854,28 @@ module.exports = (_, argv) => ({
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "start": "webpack serve --env PORT=3003 --open", 
-      "build": "webpack --mode production"
+        "start": "webpack serve --env PORT=3003 --open",
+        "build": "webpack --mode production"
     },
     "dependencies": {
-      "axios": "^1.8.0",
-      "react": "^18.3.0",
-      "react-dom": "^18.3.0",
-      "react-router-dom": "^6.23.0"
+        "axios": "^1.8.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "react-router-dom": "^6.23.0"
     },
     "devDependencies": {
-      "@babel/core": "^7.24.5",
-      "@babel/preset-react": "^7.24.5",
-      "babel-loader": "^9.1.4",
-      "html-webpack-plugin": "^5.5.3",
-      "webpack": "^5.92.0",
-      "webpack-cli": "^5.1.4",
-      "webpack-dev-server": "^4.15.2"
+        "@babel/core": "^7.24.5",
+        "@babel/preset-react": "^7.24.5",
+        "babel-loader": "^9.1.4",
+        "css-loader": "^7.1.2",
+        "html-webpack-plugin": "^5.5.3",
+        "style-loader": "^4.0.0",
+        "webpack": "^5.92.0",
+        "webpack-cli": "^5.1.4",
+        "webpack-dev-server": "^4.15.2"
     }
-  }
-  
+}
+
 
 === reservations-mf\public\index.html ===
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>reservations MF</title></head>
@@ -446,11 +883,12 @@ module.exports = (_, argv) => ({
 
 
 === reservations-mf\src\App.js ===
+// reservations-mf/src/App.js
+import './styles.css';                  // ← add this
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
 
-// point at your web gateway
 const reservationApi = axios.create({
   baseURL: 'http://localhost:4000/api/reservations',
 });
@@ -458,7 +896,6 @@ const usersApi = axios.create({
   baseURL: 'http://localhost:4000/api/users',
 });
 
-// helper to decode JWT payload
 function decodeToken(token) {
   try {
     return JSON.parse(atob(token.split('.')[1]));
@@ -468,12 +905,12 @@ function decodeToken(token) {
 }
 
 function CreateReservation() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: user_id } = decodeToken(token);
   const [barbers, setBarbers] = useState([]);
   const [form, setForm] = useState({
-    user_id: user_id || '',
-    barber_id: '',
+    user_id:          user_id || '',
+    barber_id:        '',
     appointment_time: '',
   });
 
@@ -491,13 +928,10 @@ function CreateReservation() {
   const handleSubmit = async e => {
     e.preventDefault();
     const payload = {
-      // ⚠️ FastAPI expects strings here
-      user_id: String(user_id),
-      barber_id: String(form.barber_id),
-      appointment_time: new Date(form.appointment_time).toISOString(),
+      user_id:          String(user_id),
+      barber_id:        String(form.barber_id),
+      appointment_time: new Date(form.appointment_time).toISOString()
     };
-
-    console.log('→ POST /api/reservations payload:', payload);
 
     try {
       const res = await reservationApi.post(
@@ -507,52 +941,51 @@ function CreateReservation() {
       );
       alert('Reservation created: ' + JSON.stringify(res.data));
     } catch (err) {
-      console.error('❌ Reservation error response:', err.response?.data || err);
+      console.error('❌', err);
       alert('Failed to create reservation:\n' +
             JSON.stringify(err.response?.data, null, 2));
     }
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Create Reservation</h2>
-      <p><strong>User:</strong> {user_id}</p>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">Create Reservation</h2>
+        <p><strong>User:</strong> {user_id}</p>
+        <form onSubmit={handleSubmit}>
+          <label>
+            Barber:
+            <select
+              value={form.barber_id}
+              onChange={e => setForm({ ...form, barber_id: e.target.value })}
+              required
+            >
+              <option value="">— choose barber —</option>
+              {barbers.map(b => (
+                <option key={b.id} value={b.id}>{b.username}</option>
+              ))}
+            </select>
+          </label>
 
-      <label>
-        Barber:
-        <select
-          value={form.barber_id}
-          onChange={e => setForm({ ...form, barber_id: e.target.value })}
-          required
-        >
-          <option value="">— choose barber —</option>
-          {barbers.map(b => (
-            <option key={b.id} value={b.id}>
-              {b.username}
-            </option>
-          ))}
-        </select>
-      </label>
+          <label>
+            Appointment Time:
+            <input
+              type="datetime-local"
+              value={form.appointment_time}
+              onChange={e => setForm({ ...form, appointment_time: e.target.value })}
+              required
+            />
+          </label>
 
-      <label>
-        Appointment Time:
-        <input
-          type="datetime-local"
-          value={form.appointment_time}
-          onChange={e =>
-            setForm({ ...form, appointment_time: e.target.value })
-          }
-          required
-        />
-      </label>
-
-      <button type="submit">Create</button>
-    </form>
+          <button type="submit">Create</button>
+        </form>
+      </div>
+    </div>
   );
 }
 
 function ListReservations() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: user_id } = decodeToken(token);
   const [reservations, setReservations] = useState([]);
 
@@ -566,43 +999,43 @@ function ListReservations() {
   }, [user_id, token]);
 
   return (
-    <div>
-      <h2>My Reservations</h2>
-      <ul>
-        {reservations.map(r => (
-          <li key={r.id}>
-            {new Date(r.appointment_time).toLocaleString()} — {r.status}
-            {r.status === 'declined' && (
-              <div className="decline-message">{r.message}</div>
-            )}
-          </li>
-        ))}
-      </ul>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">My Reservations</h2>
+        <ul>
+          {reservations.map(r => (
+            <li key={r.id} style={{ marginBottom: 12 }}>
+              {new Date(r.appointment_time).toLocaleString()} — {r.status}
+              {r.status === 'declined' && <div>{r.message}</div>}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
 
 function BarberReservations() {
-  const token = localStorage.getItem('token');
+  const token   = localStorage.getItem('token');
   const { id: barber_id } = decodeToken(token);
   const [reservations, setReservations] = useState([]);
-  const [msgs, setMsgs] = useState({}); // resId → decline message
+  const [msgs, setMsgs] = useState({});
 
   useEffect(() => {
-    reservationApi
-      .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setReservations(res.data))
-      .catch(console.error);
+    if (barber_id) {
+      reservationApi
+        .get(`/barber/${barber_id}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => setReservations(res.data))
+        .catch(console.error);
+    }
   }, [barber_id, token]);
 
   function respond(resId, accept) {
     const message = msgs[resId] || '';
     reservationApi
-      .patch(
-        `/${resId}`,
-        { status: accept ? 'accepted' : 'declined', message },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      .patch(`/${resId}`,
+             { status: accept ? 'accepted' : 'declined', message },
+             { headers: { Authorization: `Bearer ${token}` } })
       .then(() => {
         setReservations(rs =>
           rs.map(r =>
@@ -615,33 +1048,49 @@ function BarberReservations() {
       .catch(console.error);
   }
 
+  const handleDelete = async id => {
+    try {
+      await reservationApi.delete(`/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setReservations(rs => rs.filter(r => r.id !== id));
+    } catch (err) {
+      console.error('❌', err);
+      alert('Failed to delete reservation');
+    }
+  };
+
   return (
-    <div>
-      <h2>Incoming Reservations</h2>
-      <ul>
-        {reservations.map(r => (
-          <li key={r.id}>
-            Customer #{r.user_id} —{' '}
-            {new Date(r.appointment_time).toLocaleString()} — {r.status}
-            {r.status === 'pending' && (
-              <>
-                <button onClick={() => respond(r.id, true)}>Accept</button>
-                <textarea
-                  placeholder="Decline message"
-                  value={msgs[r.id] || ''}
-                  onChange={e =>
-                    setMsgs({ ...msgs, [r.id]: e.target.value })
-                  }
-                />
-                <button onClick={() => respond(r.id, false)}>Decline</button>
-              </>
-            )}
-            {r.status === 'declined' && (
-              <div className="decline-message">{r.message}</div>
-            )}
-          </li>
-        ))}
-      </ul>
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">Incoming Reservations</h2>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {reservations.map(r => (
+            <li key={r.id} style={{ marginBottom: 24, borderBottom: '1px solid #eee', paddingBottom: 12 }}>
+              <div>
+                Customer #{r.user_id} — {new Date(r.appointment_time).toLocaleString()} — {r.status}
+              </div>
+
+              {r.status === 'pending' && (
+                <div style={{ marginTop: 8 }}>
+                  <button onClick={() => respond(r.id, true)} style={{ marginRight: 8 }}>Accept</button>
+                  <textarea
+                    placeholder="Decline message"
+                    value={msgs[r.id] || ''}
+                    onChange={e => setMsgs({ ...msgs, [r.id]: e.target.value })}
+                    style={{ verticalAlign: 'top', marginRight: 8 }}
+                  />
+                  <button onClick={() => respond(r.id, false)}>Decline</button>
+                </div>
+              )}
+
+              {r.status === 'declined' && <div>{r.message}</div>}
+
+              <button onClick={() => handleDelete(r.id)} style={{ marginTop: 8 }}>Delete</button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -653,11 +1102,11 @@ export default function App() {
   return (
     <Routes>
       {role === 'barber' ? (
-        <Route path="/" element={<BarberReservations />} />
+        <Route path="/reservations" element={<BarberReservations />} />
       ) : (
         <>
-          <Route path="/" element={<CreateReservation />} />
-          <Route path="list" element={<ListReservations />} />
+          <Route path="/reservations" element={<CreateReservation />} />
+          <Route path="/reservations/list" element={<ListReservations />} />
         </>
       )}
     </Routes>
@@ -666,12 +1115,13 @@ export default function App() {
 
 
 === reservations-mf\src\bootstrap.js ===
+import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { BrowserRouter } from 'react-router-dom';
 
-const mount = (el) => {
+const mount = el => {
   ReactDOM.createRoot(el).render(
     <BrowserRouter>
       <App />
@@ -679,15 +1129,11 @@ const mount = (el) => {
   );
 };
 
-// Export it for Module Federation
 export default mount;
 
-// If running standalone (npm start), mount immediately:
 if (process.env.NODE_ENV === 'development') {
   const root = document.getElementById('root');
-  if (root) {
-    mount(root);
-  }
+  if (root) mount(root);
 }
 
 
@@ -695,44 +1141,225 @@ if (process.env.NODE_ENV === 'development') {
 import('./bootstrap');
 
 
+=== reservations-mf\src\styles.css ===
+/* src/styles.css */
+
+/* color palette */
+:root {
+  --barber-red:    #c0392b;
+  --barber-blue:   #2980b9;
+  --light-gray:    #f5f5f5;
+  --dark-text:     #2c3e50;
+}
+
+/* global resets & body */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--light-gray);
+  color: var(--dark-text);
+  line-height: 1.6;
+}
+
+/* barber-pole stripe at top */
+.barber-pole {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--barber-red) 0,
+    var(--barber-red) 10px,
+    var(--barber-blue) 10px,
+    var(--barber-blue) 20px
+  );
+}
+
+/* nav bar */
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 2px solid var(--barber-red);
+}
+.navbar .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-right: auto;
+}
+.navbar a,
+.navbar button {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: var(--dark-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.navbar a:hover,
+.navbar button:hover {
+  color: var(--barber-red);
+}
+
+/* container wrapper */
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* cards for reservations/payments/etc. */
+.card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* forms */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+label {
+  font-weight: 600;
+}
+input, select, textarea {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  color: white;
+  background: var(--barber-red);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button.secondary {
+  background: var(--barber-blue);
+}
+button:hover {
+  opacity: 0.9;
+}
+
+/* headings */
+h2 {
+  margin-top: 0;
+  color: var(--barber-red);
+}
+
+/* little scissors icon utility */
+.icon-scissors::before {
+  content: "✂️ ";
+}
+
+
 === reservations-mf\webpack.config.js ===
-const HtmlWebpackPlugin = require('html-webpack-plugin');
+// reservations-mf/webpack.config.js
+const HtmlWebpackPlugin        = require('html-webpack-plugin');
 const { ModuleFederationPlugin } = require('webpack').container;
-const path = require('path');
 
 module.exports = (_, argv) => ({
-  entry: './src/bootstrap.js',
-  mode: argv.mode || 'development',
-  devServer: { port: 3003, historyApiFallback: true },
-  output: { publicPath: 'auto', clean: true },
-  resolve: { extensions: ['.js', '.jsx'] },
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-          options: { presets: ['@babel/preset-react'] }
-        }
-      }
-    ]
+  entry : './src/bootstrap.js',
+  mode  : argv.mode || 'development',
+
+  devServer : {
+    port              : 3003,
+    historyApiFallback: true,
+    headers           : {
+      'Access-Control-Allow-Origin' : '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
   },
-  plugins: [
+
+  // 👉 NO extra runtime chunk, NO splitChunks – just one bundle
+  optimization : { splitChunks: false, runtimeChunk: false },
+
+  output : {
+    publicPath         : 'auto',
+    clean              : true,
+    crossOriginLoading : 'anonymous',
+  },
+
+  resolve : { extensions: ['.js', '.jsx'] },
+
+  module  : {
+    rules : [
+      { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
+      {
+        test   : /\.jsx?$/,
+        exclude: /node_modules/,
+        use    : { loader: 'babel-loader', options: { presets: ['@babel/preset-react'] } },
+      },
+    ],
+  },
+
+  plugins : [
     new HtmlWebpackPlugin({ template: './public/index.html' }),
     new ModuleFederationPlugin({
-      name: 'reservationsMf',
+      name    : 'reservationsMf',
       filename: 'remoteEntry.js',
-      exposes: { './App': './src/App' },
-      shared: {
-        react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
-        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
-      }
-    })
-  ]
+      exposes : { './App': './src/App' },
+      shared  : {
+        react             : { singleton: true, eager: true, requiredVersion: false },
+        'react-dom'       : { singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false },
+      },
+    }),
+  ],
 });
 
+
+=== users-mf\Dockerfile ===
+# ---------- 1) BUILD stage ----------------------------------------------------
+FROM node:18-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci            # install deps *inside the image*
+
+COPY . .
+RUN npm run build     # → creates /app/dist
+
+# ---------- 2) RUNTIME stage --------------------------------------------------
+FROM nginx:alpine
+
+# CORS + SPA fallback
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# remove default html and copy our dist
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+
+=== users-mf\nginx.conf ===
+# nginx.conf  (place it next to each Dockerfile)
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+
+  # allow the JS to be loaded cross-origin
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Cross-Origin-Resource-Policy "cross-origin" always;
+
+  # history-fallback for SPA routes
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
 
 === users-mf\package.json ===
 {
@@ -740,26 +1367,28 @@ module.exports = (_, argv) => ({
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "start": "webpack serve --env PORT=3002 --open", 
-      "build": "webpack --mode production"
+        "start": "webpack serve --env PORT=3002 --open",
+        "build": "webpack --mode production"
     },
     "dependencies": {
-      "axios": "^1.8.0",
-      "react": "^18.3.0",
-      "react-dom": "^18.3.0",
-      "react-router-dom": "^6.23.0"
+        "axios": "^1.8.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "react-router-dom": "^6.23.0"
     },
     "devDependencies": {
-      "@babel/core": "^7.24.5",
-      "@babel/preset-react": "^7.24.5",
-      "babel-loader": "^9.1.4",
-      "html-webpack-plugin": "^5.5.3",
-      "webpack": "^5.92.0",
-      "webpack-cli": "^5.1.4",
-      "webpack-dev-server": "^4.15.2"
+        "@babel/core": "^7.24.5",
+        "@babel/preset-react": "^7.24.5",
+        "babel-loader": "^9.1.4",
+        "css-loader": "^7.1.2",
+        "html-webpack-plugin": "^5.5.3",
+        "style-loader": "^4.0.0",
+        "webpack": "^5.92.0",
+        "webpack-cli": "^5.1.4",
+        "webpack-dev-server": "^4.15.2"
     }
-  }
-  
+}
+
 
 === users-mf\public\index.html ===
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>users MF</title></head>
@@ -767,6 +1396,8 @@ module.exports = (_, argv) => ({
 
 
 === users-mf\src\App.js ===
+// users-mf/src/App.js
+import './styles.css';                 // ← add this
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
@@ -775,27 +1406,76 @@ const api = axios.create({
   baseURL: 'http://localhost:4000/api/users',
 });
 
+function decodeToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return {};
+  }
+}
+
+function Layout({ title, children }) {
+  return (
+    <div className="container">
+      <div className="card">
+        <h2 className="icon-scissors">{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function Register() {
-  const [form, setForm] = useState({ username: '', email: '', password: '', role: 'customer' });
+  const [form, setForm] = useState({
+    username: '', email: '', password: '', role: 'customer'
+  });
   const navigate = useNavigate();
 
   const handleSubmit = async e => {
     e.preventDefault();
     await api.post('/register', form);
     alert('Registered! Now login.');
-    navigate('/login');    // relative: goes to /users/login
+    navigate('/login');
   };
 
   return (
     <form onSubmit={handleSubmit}>
-      <h2>Register</h2>
-      <input placeholder="Username"    onChange={e => setForm({ ...form, username: e.target.value })} required />
-      <input placeholder="Email"       onChange={e => setForm({ ...form, email:    e.target.value })} required />
-      <input type="password" placeholder="Password" onChange={e => setForm({ ...form, password: e.target.value })} required />
-      <select onChange={e => setForm({ ...form, role: e.target.value })}>
-        <option value="customer">Customer</option>
-        <option value="barber">Barber</option>
-      </select>
+      <label>
+        Username
+        <input
+          placeholder="Username"
+          onChange={e => setForm({ ...form, username: e.target.value })}
+          required
+        />
+      </label>
+
+      <label>
+        Email
+        <input
+          placeholder="Email"
+          onChange={e => setForm({ ...form, email: e.target.value })}
+          required
+        />
+      </label>
+
+      <label>
+        Password
+        <input
+          type="password"
+          placeholder="Password"
+          onChange={e => setForm({ ...form, password: e.target.value })}
+          required
+        />
+      </label>
+
+      <label>
+        Role
+        <select onChange={e => setForm({ ...form, role: e.target.value })}>
+          <option value="customer">Customer</option>
+          <option value="barber">Barber</option>
+        </select>
+      </label>
+
       <button type="submit">Register</button>
     </form>
   );
@@ -810,14 +1490,30 @@ function Login() {
     const res = await api.post('/login', form);
     localStorage.setItem('token', res.data.token);
     alert('Login successful');
-    navigate('/profile');  // relative: goes to /users/profile
+    navigate('/profile');
   };
 
   return (
     <form onSubmit={handleSubmit}>
-      <h2>Login</h2>
-      <input placeholder="Username"    onChange={e => setForm({ ...form, username: e.target.value })} required />
-      <input type="password" placeholder="Password" onChange={e => setForm({ ...form, password: e.target.value })} required />
+      <label>
+        Username
+        <input
+          placeholder="Username"
+          onChange={e => setForm({ ...form, username: e.target.value })}
+          required
+        />
+      </label>
+
+      <label>
+        Password
+        <input
+          type="password"
+          placeholder="Password"
+          onChange={e => setForm({ ...form, password: e.target.value })}
+          required
+        />
+      </label>
+
       <button type="submit">Login</button>
     </form>
   );
@@ -831,46 +1527,40 @@ function Profile() {
     api.get('/profile', { headers: { Authorization: `Bearer ${token}` } })
        .then(res => setProfile(res.data))
        .catch(console.error);
-  }, []);
+  }, [token]);
 
   if (!profile) return <p>Loading...</p>;
+
   return (
-    <div>
-      <h2>Profile</h2>
-      <p>Username: {profile.username}</p>
-      <p>Email:    {profile.email}</p>
-      <p>Role:     {profile.role}</p>
-    </div>
+    <>
+      <p><strong>Username:</strong> {profile.username}</p>
+      <p><strong>Email:</strong>    {profile.email}</p>
+      <p><strong>Role:</strong>     {profile.role}</p>
+    </>
   );
 }
 
 export default function App() {
   return (
     <Routes>
-      {/* when at /users      → redirect to /users/login */}
-      <Route index       element={<Navigate to="login"    replace />} />
-
-      {/* matches /users/login     */}
-      <Route path="login"    element={<Login />} />
-      {/* matches /users/register  */}
-      <Route path="register" element={<Register />} />
-      {/* matches /users/profile   */}
-      <Route path="profile"  element={<Profile />} />
-
-      {/* any other /users/* → back to login */}
-      <Route path="*" element={<Navigate to="login" replace />} />
+      <Route index element={<Navigate to="login" replace />} />
+      <Route path="login"    element={<Layout title="Login"><Login /></Layout>} />
+      <Route path="register" element={<Layout title="Register"><Register /></Layout>} />
+      <Route path="profile"  element={<Layout title="Profile"><Profile /></Layout>} />
+      <Route path="*"        element={<Navigate to="login" replace />} />
     </Routes>
   );
 }
 
 
 === users-mf\src\bootstrap.js ===
+import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { BrowserRouter } from 'react-router-dom';
 
-const mount = (el) => {
+const mount = el => {
   ReactDOM.createRoot(el).render(
     <BrowserRouter>
       <App />
@@ -878,15 +1568,11 @@ const mount = (el) => {
   );
 };
 
-// Export it for Module Federation
 export default mount;
 
-// If running standalone (npm start), mount immediately:
 if (process.env.NODE_ENV === 'development') {
   const root = document.getElementById('root');
-  if (root) {
-    mount(root);
-  }
+  if (root) mount(root);
 }
 
 
@@ -894,42 +1580,181 @@ if (process.env.NODE_ENV === 'development') {
 import('./bootstrap');
 
 
+=== users-mf\src\styles.css ===
+/* src/styles.css */
+
+/* color palette */
+:root {
+  --barber-red:    #c0392b;
+  --barber-blue:   #2980b9;
+  --light-gray:    #f5f5f5;
+  --dark-text:     #2c3e50;
+}
+
+/* global resets & body */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--light-gray);
+  color: var(--dark-text);
+  line-height: 1.6;
+}
+
+/* barber-pole stripe at top */
+.barber-pole {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--barber-red) 0,
+    var(--barber-red) 10px,
+    var(--barber-blue) 10px,
+    var(--barber-blue) 20px
+  );
+}
+
+/* nav bar */
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 2px solid var(--barber-red);
+}
+.navbar .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-right: auto;
+}
+.navbar a,
+.navbar button {
+  margin-left: 1rem;
+  text-decoration: none;
+  color: var(--dark-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.navbar a:hover,
+.navbar button:hover {
+  color: var(--barber-red);
+}
+
+/* container wrapper */
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* cards for reservations/payments/etc. */
+.card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* forms */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+label {
+  font-weight: 600;
+}
+input, select, textarea {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  color: white;
+  background: var(--barber-red);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+button.secondary {
+  background: var(--barber-blue);
+}
+button:hover {
+  opacity: 0.9;
+}
+
+/* headings */
+h2 {
+  margin-top: 0;
+  color: var(--barber-red);
+}
+
+/* little scissors icon utility */
+.icon-scissors::before {
+  content: "✂️ ";
+}
+
+
 === users-mf\webpack.config.js ===
-const HtmlWebpackPlugin = require('html-webpack-plugin');
+// users-mf/webpack.config.js
+const HtmlWebpackPlugin        = require('html-webpack-plugin');
 const { ModuleFederationPlugin } = require('webpack').container;
-const path = require('path');
 
 module.exports = (_, argv) => ({
-  entry: './src/bootstrap.js',
-  mode: argv.mode || 'development',
-  devServer: { port: 3002, historyApiFallback: true },
-  output: { publicPath: 'auto', clean: true },
-  resolve: { extensions: ['.js', '.jsx'] },
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-          options: { presets: ['@babel/preset-react'] }
-        }
-      }
-    ]
+  entry : './src/bootstrap.js',
+  mode  : argv.mode || 'development',
+
+  devServer : {
+    port              : 3002,
+    historyApiFallback: true,
+    headers           : {
+      'Access-Control-Allow-Origin' : '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
   },
-  plugins: [
+
+  optimization : { splitChunks: false, runtimeChunk: false },
+
+  output : {
+    publicPath         : 'auto',
+    clean              : true,
+    crossOriginLoading : 'anonymous',
+  },
+
+  resolve : { extensions: ['.js', '.jsx'] },
+
+  module  : {
+    rules : [
+      { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
+      {
+        test   : /\.jsx?$/,
+        exclude: /node_modules/,
+        use    : { loader: 'babel-loader', options: { presets: ['@babel/preset-react'] } },
+      },
+    ],
+  },
+
+  plugins : [
     new HtmlWebpackPlugin({ template: './public/index.html' }),
     new ModuleFederationPlugin({
-      name: 'usersMf',
+      name    : 'usersMf',
       filename: 'remoteEntry.js',
-      exposes: { './App': './src/App' },
-      shared: {
-        react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
-        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
-      }
-    })
-  ]
+      exposes : { './App': './src/App' },
+      shared  : {
+        react             : { singleton: true, eager: true, requiredVersion: false },
+        'react-dom'       : { singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, eager: true, requiredVersion: false },
+      },
+    }),
+  ],
 });
 
 

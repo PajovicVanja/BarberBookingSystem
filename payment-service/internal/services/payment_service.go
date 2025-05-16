@@ -1,3 +1,4 @@
+// internal/services/payment_service.go
 package services
 
 import (
@@ -17,6 +18,7 @@ type PaymentService interface {
 	GetPaymentsByUser(userID int64) ([]*models.Payment, error)
 	GetPaymentsByBarber(barberID int64) ([]*models.Payment, error)
 	HandleWebhook(data map[string]interface{}) error
+	DeletePayment(id int64) error
 }
 
 type paymentService struct {
@@ -91,5 +93,16 @@ func (s *paymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment,
 
 func (s *paymentService) HandleWebhook(data map[string]interface{}) error {
 	// implement as needed
+	return nil
+}
+
+func (s *paymentService) DeletePayment(id int64) error {
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	// Publish payment.deleted event
+	go func(id int64) {
+		_ = s.mq.Publish("payment.deleted", map[string]interface{}{"id": id})
+	}(id)
 	return nil
 }

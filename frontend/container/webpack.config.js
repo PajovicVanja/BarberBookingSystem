@@ -5,18 +5,20 @@ const path = require('path');
 module.exports = (_, argv) => ({
   entry: './src/bootstrap.js',
   mode: argv.mode || 'development',
-  devServer: { port: 3001, historyApiFallback: true },
-  output: { publicPath: 'auto', clean: true },
+ devServer: { port: 3001, historyApiFallback: true },
+  output: {
+    publicPath: 'auto',
+    clean: true,
+   crossOriginLoading: 'anonymous',
+  },
   resolve: { extensions: ['.js', '.jsx'] },
   module: {
     rules: [
+      { test: /\.css$/i, use: ['style-loader', 'css-loader'] },
       {
         test: /\.jsx?$/,
         exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
-          options: { presets: ['@babel/preset-react'] }
-        }
+        use: { loader: 'babel-loader', options: { presets: ['@babel/preset-react'] } }
       }
     ]
   },
@@ -25,14 +27,14 @@ module.exports = (_, argv) => ({
     new ModuleFederationPlugin({
       name: 'container',
       remotes: {
-        UsersMF: 'usersMf@http://localhost:3002/remoteEntry.js',
+        UsersMF:        'usersMf@http://localhost:3002/remoteEntry.js',
         ReservationsMF: 'reservationsMf@http://localhost:3003/remoteEntry.js',
-        PaymentsMF: 'paymentsMf@http://localhost:3004/remoteEntry.js'
+        PaymentsMF:     'paymentsMf@http://localhost:3004/remoteEntry.js'
       },
       shared: {
-        react:      { singleton: true, eager: true, requiredVersion: false },
-        'react-dom':{ singleton: true, eager: true, requiredVersion: false },
-        'react-router-dom': { singleton: true, eager: true, requiredVersion: false }
+        react:             { singleton: true, eager: true, requiredVersion: false },
+        'react-dom':       { singleton: true, eager: true, requiredVersion: false },
+        'react-router-dom':{ singleton: true, eager: true, requiredVersion: false }
       }
     })
   ]

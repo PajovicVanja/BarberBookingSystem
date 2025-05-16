@@ -1,3 +1,4 @@
+import './styles.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -11,10 +12,8 @@ const mount = (el) => {
   );
 };
 
-// Export it for Module Federation
 export default mount;
 
-// If running standalone (npm start), mount immediately:
 if (process.env.NODE_ENV === 'development') {
   const root = document.getElementById('root');
   if (root) {

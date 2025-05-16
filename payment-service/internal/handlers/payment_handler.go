@@ -1,3 +1,4 @@
+// internal/handlers/payment_handler.go
 package handlers
 
 import (
@@ -23,6 +24,7 @@ func RegisterPaymentRoutes(r *gin.Engine, service services.PaymentService) {
 		p.GET("/user/:id", handler.GetPaymentsByUser)
 		p.GET("/barber/:id", handler.GetPaymentsByBarber)
 		p.POST("/webhook", handler.HandleWebhook)
+		p.DELETE("/:id", handler.DeletePayment)
 	}
 }
 
@@ -92,4 +94,17 @@ func (h *PaymentHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "webhook processed"})
+}
+
+func (h *PaymentHandler) DeletePayment(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment ID"})
+		return
+	}
+	if err := h.service.DeletePayment(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

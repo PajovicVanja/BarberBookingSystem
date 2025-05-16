@@ -1,7 +1,9 @@
+// internal/repository/payment_repository.go
 package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"paymentservice/internal/models"
 	"time"
@@ -12,6 +14,7 @@ type PaymentRepository interface {
 	GetByID(id int64) (*models.Payment, error)
 	GetByUserID(userID int64) ([]*models.Payment, error)
 	GetByBarberID(barberID int64) ([]*models.Payment, error)
+	Delete(id int64) error
 }
 
 type paymentRepository struct {
@@ -134,6 +137,23 @@ func (r *paymentRepository) GetByBarberID(barberID int64) ([]*models.Payment, er
 		payments = append(payments, &p)
 	}
 	return payments, nil
+}
+
+// Delete removes a payment record by ID.
+func (r *paymentRepository) Delete(id int64) error {
+	query := `DELETE FROM payments WHERE id = ?`
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("payment id %d not found", id)
+	}
+	return nil
 }
 
 // NewMySQLDB creates and pings a MySQL database connection.

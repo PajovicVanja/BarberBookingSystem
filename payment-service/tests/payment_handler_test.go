@@ -1,3 +1,4 @@
+// tests/payment_handler_test.go
 package tests
 
 import (
@@ -8,6 +9,7 @@ import (
 	"paymentservice/internal/handlers"
 	"paymentservice/internal/models"
 	"testing"
+
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -45,10 +47,6 @@ func (m *mockPaymentService) GetPaymentsByUser(userID int64) ([]*models.Payment,
 	}, nil
 }
 
-func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
-	return nil
-}
-
 func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment, error) {
 	return []*models.Payment{
 		{
@@ -60,6 +58,14 @@ func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Paym
 			PaymentMethod: "credit_card",
 		},
 	}, nil
+}
+
+func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
+	return nil
+}
+
+func (m *mockPaymentService) DeletePayment(id int64) error {
+	return nil
 }
 
 func TestProcessPayment(t *testing.T) {
@@ -134,4 +140,17 @@ func TestHandleWebhook(t *testing.T) {
 	r.ServeHTTP(resp, req)
 
 	assert.Equal(t, 200, resp.Code)
+}
+
+func TestDeletePayment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	service := &mockPaymentService{}
+	handlers.RegisterPaymentRoutes(r, service)
+
+	req, _ := http.NewRequest("DELETE", "/api/payments/1", nil)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusNoContent, resp.Code)
 }
