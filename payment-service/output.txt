@@ -9,11 +9,12 @@ import (
 	"paymentservice/internal/middleware"
 	"paymentservice/internal/repository"
 	"paymentservice/internal/services"
+
 	"github.com/gin-gonic/gin"
-	"github.com/swaggo/gin-swagger" 
+	"github.com/swaggo/gin-swagger"
 	"github.com/swaggo/gin-swagger/swaggerFiles"
 	_ "paymentservice/docs"
-	_ "github.com/go-sql-driver/mysql" 
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func main() {
@@ -37,19 +38,24 @@ func main() {
 	}
 	defer mq.Close()
 
-	// Start the reservation consumer in the Payment Service (if needed)
-	// For example, listening on a "reservation_notifications" queue.
+	// (Optional) still consume reservation notifications
 	go messaging.StartReservationConsumer(cfg.RabbitMQURL, "reservation_notifications")
 
-	// Create repository and service layer instances
+	// Create repository and service layer instances,
+	// now passing in the reservation‐service base URL from config:
 	paymentRepo := repository.NewPaymentRepository(db)
-	paymentService := services.NewPaymentService(paymentRepo, mq)
+	paymentService := services.NewPaymentService(
+		paymentRepo,
+		mq,
+		cfg.RabbitMQEventQueue,
+		cfg.ReservationServiceURL,
+	)
 
 	// Set up Gin engine with logging middleware
 	r := gin.Default()
 	r.Use(middleware.Logger())
 
-	// Register payment routes with Swagger documentation available at /swagger/index.html
+	// Register payment routes
 	handlers.RegisterPaymentRoutes(r, paymentService)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
@@ -64,17 +70,21 @@ package config
 import "os"
 
 type Config struct {
-	ServerPort  string
-	DatabaseDSN string
-	RabbitMQURL string
+	ServerPort             string
+	DatabaseDSN            string
+	RabbitMQURL            string
+	RabbitMQEventQueue     string
+	ReservationServiceURL  string
 }
 
 // LoadConfig loads configuration from environment variables.
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		ServerPort:  getEnv("SERVER_PORT", "8080"),
-		DatabaseDSN: getEnv("DATABASE_DSN", "root:root@tcp(localhost:3306)/paymentdb?parseTime=true"),
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		ServerPort:            getEnv("SERVER_PORT", "8080"),
+		DatabaseDSN:           getEnv("DATABASE_DSN", "root:root@tcp(localhost:3306)/paymentdb?parseTime=true"),
+		RabbitMQURL:           getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		RabbitMQEventQueue:    getEnv("RABBITMQ_EVENT_QUEUE", "payment_events"),
+		ReservationServiceURL: getEnv("RESERVATION_SERVICE_URL", "http://reservation-service:8000"),
 	}
 	return cfg, nil
 }
@@ -88,6 +98,7 @@ func getEnv(key, defaultValue string) string {
 
 
 === internal\handlers\payment_handler.go ===
+// internal/handlers/payment_handler.go
 package handlers
 
 import (
@@ -113,6 +124,7 @@ func RegisterPaymentRoutes(r *gin.Engine, service services.PaymentService) {
 		p.GET("/user/:id", handler.GetPaymentsByUser)
 		p.GET("/barber/:id", handler.GetPaymentsByBarber)
 		p.POST("/webhook", handler.HandleWebhook)
+		p.DELETE("/:id", handler.DeletePayment)
 	}
 }
 
@@ -182,6 +194,19 @@ func (h *PaymentHandler) HandleWebhook(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "webhook processed"})
+}
+
+func (h *PaymentHandler) DeletePayment(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment ID"})
+		return
+	}
+	if err := h.service.DeletePayment(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 
@@ -385,10 +410,12 @@ type Payment struct {
 
 
 === internal\repository\payment_repository.go ===
+// internal/repository/payment_repository.go
 package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"paymentservice/internal/models"
 	"time"
@@ -399,6 +426,7 @@ type PaymentRepository interface {
 	GetByID(id int64) (*models.Payment, error)
 	GetByUserID(userID int64) ([]*models.Payment, error)
 	GetByBarberID(barberID int64) ([]*models.Payment, error)
+	Delete(id int64) error
 }
 
 type paymentRepository struct {
@@ -523,6 +551,23 @@ func (r *paymentRepository) GetByBarberID(barberID int64) ([]*models.Payment, er
 	return payments, nil
 }
 
+// Delete removes a payment record by ID.
+func (r *paymentRepository) Delete(id int64) error {
+	query := `DELETE FROM payments WHERE id = ?`
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("payment id %d not found", id)
+	}
+	return nil
+}
+
 // NewMySQLDB creates and pings a MySQL database connection.
 func NewMySQLDB(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -545,48 +590,59 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
 	"paymentservice/internal/messaging"
 	"paymentservice/internal/models"
 	"paymentservice/internal/repository"
 )
 
+// PaymentService defines our service interface.
 type PaymentService interface {
 	ProcessPayment(payment *models.Payment) error
 	GetPaymentByID(id int64) (*models.Payment, error)
 	GetPaymentsByUser(userID int64) ([]*models.Payment, error)
 	GetPaymentsByBarber(barberID int64) ([]*models.Payment, error)
 	HandleWebhook(data map[string]interface{}) error
+	DeletePayment(id int64) error
 }
 
 type paymentService struct {
-	repo repository.PaymentRepository
-	mq   messaging.MessageQueue
+	repo                  repository.PaymentRepository
+	mq                    messaging.MessageQueue
+	eventQueue            string
+	reservationServiceURL string
 }
 
-func NewPaymentService(repo repository.PaymentRepository, mq messaging.MessageQueue) PaymentService {
+// NewPaymentService takes repo, mq, the domain-event queue name, and the reservation-service base URL.
+func NewPaymentService(
+	repo repository.PaymentRepository,
+	mq messaging.MessageQueue,
+	eventQueue string,
+	reservationServiceURL string,
+) PaymentService {
 	return &paymentService{
-		repo: repo,
-		mq:   mq,
+		repo:                  repo,
+		mq:                    mq,
+		eventQueue:            eventQueue,
+		reservationServiceURL: reservationServiceURL,
 	}
 }
 
 func (s *paymentService) ProcessPayment(payment *models.Payment) error {
-	// 🔍 1) Fetch the reservation to ensure it’s been accepted
-	url := fmt.Sprintf("http://reservation-service:8000/api/reservations/%s", payment.ReservationID)
+	// 1) Fetch reservation to confirm it’s accepted
+	url := fmt.Sprintf("%s/api/reservations/%s", s.reservationServiceURL, payment.ReservationID)
 	resp, err := http.Get(url)
 	if err != nil || resp.StatusCode != 200 {
 		return errors.New("could not fetch reservation")
 	}
 	defer resp.Body.Close()
 
-	// The reservation endpoint returns a Reservation JSON directly
 	var res struct {
-		ID             string `json:"id"`
-		UserID         string `json:"user_id"`
-		BarberID       string `json:"barber_id"`
+		ID              string `json:"id"`
+		UserID          string `json:"user_id"`
+		BarberID        string `json:"barber_id"`
 		AppointmentTime string `json:"appointment_time"`
-		Status         string `json:"status"`
-		Message        string `json:"message,omitempty"`
+		Status          string `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return errors.New("error decoding reservation")
@@ -595,23 +651,25 @@ func (s *paymentService) ProcessPayment(payment *models.Payment) error {
 		return errors.New("reservation not accepted")
 	}
 
-	// 🔖 2) Record which barber this payment is for
+	// 2) Record barber ID
 	barberID, err := strconv.ParseInt(res.BarberID, 10, 64)
 	if err != nil {
 		return errors.New("invalid barber ID in reservation")
 	}
 	payment.BarberID = barberID
 
-	// ✔ 3) Process & save the payment
+	// 3) Save payment
 	payment.Status = "success"
 	if err := s.repo.Create(payment); err != nil {
 		return err
 	}
 
-	// 📣 4) Publish payment.processed event
-	go func(p models.Payment) {
-		_ = s.mq.Publish("payment.processed", p)
-	}(*payment)
+	// 4) **Synchronously** publish a domain event: PaymentProcessed
+	event := map[string]interface{}{
+		"type": "PaymentProcessed",
+		"data": *payment,
+	}
+	_ = s.mq.Publish(s.eventQueue, event)
 
 	return nil
 }
@@ -633,8 +691,24 @@ func (s *paymentService) HandleWebhook(data map[string]interface{}) error {
 	return nil
 }
 
+func (s *paymentService) DeletePayment(id int64) error {
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+
+	// **Synchronously** publish a domain event: PaymentDeleted
+	event := map[string]interface{}{
+		"type": "PaymentDeleted",
+		"data": map[string]interface{}{"id": id},
+	}
+	_ = s.mq.Publish(s.eventQueue, event)
+
+	return nil
+}
+
 
 === tests\payment_handler_test.go ===
+// tests/payment_handler_test.go
 package tests
 
 import (
@@ -645,6 +719,7 @@ import (
 	"paymentservice/internal/handlers"
 	"paymentservice/internal/models"
 	"testing"
+
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -682,10 +757,6 @@ func (m *mockPaymentService) GetPaymentsByUser(userID int64) ([]*models.Payment,
 	}, nil
 }
 
-func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
-	return nil
-}
-
 func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment, error) {
 	return []*models.Payment{
 		{
@@ -697,6 +768,14 @@ func (m *mockPaymentService) GetPaymentsByBarber(barberID int64) ([]*models.Paym
 			PaymentMethod: "credit_card",
 		},
 	}, nil
+}
+
+func (m *mockPaymentService) HandleWebhook(data map[string]interface{}) error {
+	return nil
+}
+
+func (m *mockPaymentService) DeletePayment(id int64) error {
+	return nil
 }
 
 func TestProcessPayment(t *testing.T) {
@@ -771,6 +850,119 @@ func TestHandleWebhook(t *testing.T) {
 	r.ServeHTTP(resp, req)
 
 	assert.Equal(t, 200, resp.Code)
+}
+
+func TestDeletePayment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	service := &mockPaymentService{}
+	handlers.RegisterPaymentRoutes(r, service)
+
+	req, _ := http.NewRequest("DELETE", "/api/payments/1", nil)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusNoContent, resp.Code)
+}
+
+
+=== tests\payment_service_test.go ===
+// payment-service/tests/payment_service_test.go
+package tests
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"paymentservice/internal/models"
+	"paymentservice/internal/services"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// fakeRepo implements repository.PaymentRepository
+type fakeRepo struct{}
+
+func (f *fakeRepo) Create(p *models.Payment) error {
+	p.ID = 77
+	p.CreatedAt = time.Now()
+	return nil
+}
+func (f *fakeRepo) GetByID(id int64) (*models.Payment, error)   { return nil, nil }
+func (f *fakeRepo) GetByUserID(userID int64) ([]*models.Payment, error) { return nil, nil }
+func (f *fakeRepo) GetByBarberID(barberID int64) ([]*models.Payment, error) { return nil, nil }
+func (f *fakeRepo) Delete(id int64) error { return nil }
+
+// fakeMQ captures publishes
+type fakeMQ struct {
+	lastRoutingKey string
+	lastMessage    interface{}
+}
+
+func (f *fakeMQ) Publish(routingKey string, message interface{}) error {
+	f.lastRoutingKey = routingKey
+	f.lastMessage = message
+	return nil
+}
+func (f *fakeMQ) Close() error { return nil }
+
+func TestProcessPayment_PublishesEvent(t *testing.T) {
+	// 1) Start a test HTTP server that returns an "accepted" reservation
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"id":               "res-123",
+			"user_id":          "1",
+			"barber_id":        "2",
+			"appointment_time": "2025-05-18T10:00:00Z",
+			"status":           "accepted",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	// 2) Inject fakes & use ts.URL as the reservationServiceURL
+	repo := &fakeRepo{}
+	mq := &fakeMQ{}
+	svc := services.NewPaymentService(repo, mq, "payment_events", ts.URL)
+
+	// 3) Call ProcessPayment
+	p := &models.Payment{
+		UserID:        1,
+		ReservationID: "res-123",
+		Amount:        50,
+		PaymentMethod: "card",
+	}
+	err := svc.ProcessPayment(p)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(77), p.ID)
+
+	// 4) Verify the published event
+	pub, ok := mq.lastMessage.(map[string]interface{})
+	assert.True(t, ok, "message should be a map[string]interface{}")
+	assert.Equal(t, "payment_events", mq.lastRoutingKey)
+	assert.Equal(t, "PaymentProcessed", pub["type"])
+
+	// The "data" field should be a JSON‐decoded map, so we can check its "ID"
+	data := pub["data"].(map[string]interface{})
+	assert.Equal(t, float64(77), data["ID"])
+}
+
+func TestDeletePayment_PublishesEvent(t *testing.T) {
+	repo := &fakeRepo{}
+	mq := &fakeMQ{}
+	svc := services.NewPaymentService(repo, mq, "payment_events", "")
+
+	err := svc.DeletePayment(42)
+	assert.NoError(t, err)
+
+	pub, ok := mq.lastMessage.(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "PaymentDeleted", pub["type"])
+	d := pub["data"].(map[string]interface{})
+	assert.Equal(t, float64(42), d["id"])
 }
 
 

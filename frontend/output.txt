@@ -395,7 +395,7 @@ server {
 
 === payments-mf\src\App.js ===
 // payments-mf/src/App.js
-import './styles.css';               // ← add this
+import './styles.css';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
@@ -440,19 +440,20 @@ function CreatePayment() {
 
   const handleSubmit = async e => {
     e.preventDefault();
-    const payload = {
-      user_id:        Number(form.user_id),
-      reservation_id: form.reservation_id,
-      amount:         parseFloat(form.amount),
-      payment_method: form.payment_method,
-    };
     try {
-      const res = await paymentsApi.post('', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await paymentsApi.post(
+        '',
+        {
+          user_id:        Number(form.user_id),
+          reservation_id: form.reservation_id,
+          amount:         parseFloat(form.amount),
+          payment_method: form.payment_method,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       alert('Payment processed: ' + JSON.stringify(res.data));
     } catch (err) {
-      console.error('❌', err);
+      console.error(err);
       alert('Failed to process payment:\n' + JSON.stringify(err.response?.data, null, 2));
     }
   };
@@ -478,7 +479,6 @@ function CreatePayment() {
               ))}
             </select>
           </label>
-
           <label>
             Amount (€):
             <input
@@ -488,7 +488,6 @@ function CreatePayment() {
               required
             />
           </label>
-
           <label>
             Method:
             <select
@@ -499,7 +498,6 @@ function CreatePayment() {
               <option value="credit_card">Credit Card</option>
             </select>
           </label>
-
           <button type="submit">Pay</button>
         </form>
       </div>
@@ -556,7 +554,7 @@ function BarberPayments() {
       await paymentsApi.delete(`/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       setPayments(ps => ps.filter(p => p.id !== id));
     } catch (err) {
-      console.error('❌', err);
+      console.error(err);
       alert('Failed to delete payment');
     }
   };
@@ -588,11 +586,11 @@ export default function App() {
   return (
     <Routes>
       {role === 'barber' ? (
-        <Route path="/payments" element={<BarberPayments />} />
+        <Route index element={<BarberPayments />} />
       ) : (
         <>
-          <Route path="/payments" element={<CreatePayment />} />
-          <Route path="/payments/list" element={<ListPayments />} />
+          <Route index element={<CreatePayment />} />
+          <Route path="list" element={<ListPayments />} />
         </>
       )}
     </Routes>
@@ -884,7 +882,7 @@ server {
 
 === reservations-mf\src\App.js ===
 // reservations-mf/src/App.js
-import './styles.css';                  // ← add this
+import './styles.css';                  
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Routes, Route } from 'react-router-dom';
@@ -920,28 +918,25 @@ function CreateReservation() {
         .get('/barbers', { headers: { Authorization: `Bearer ${token}` } })
         .then(res => setBarbers(res.data))
         .catch(console.error);
-
       setForm(f => ({ ...f, user_id }));
     }
   }, [token, user_id]);
 
   const handleSubmit = async e => {
     e.preventDefault();
-    const payload = {
-      user_id:          String(user_id),
-      barber_id:        String(form.barber_id),
-      appointment_time: new Date(form.appointment_time).toISOString()
-    };
-
     try {
       const res = await reservationApi.post(
         '',
-        payload,
+        {
+          user_id:          String(user_id),
+          barber_id:        String(form.barber_id),
+          appointment_time: new Date(form.appointment_time).toISOString(),
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert('Reservation created: ' + JSON.stringify(res.data));
     } catch (err) {
-      console.error('❌', err);
+      console.error(err);
       alert('Failed to create reservation:\n' +
             JSON.stringify(err.response?.data, null, 2));
     }
@@ -1055,7 +1050,7 @@ function BarberReservations() {
       });
       setReservations(rs => rs.filter(r => r.id !== id));
     } catch (err) {
-      console.error('❌', err);
+      console.error(err);
       alert('Failed to delete reservation');
     }
   };
@@ -1070,7 +1065,6 @@ function BarberReservations() {
               <div>
                 Customer #{r.user_id} — {new Date(r.appointment_time).toLocaleString()} — {r.status}
               </div>
-
               {r.status === 'pending' && (
                 <div style={{ marginTop: 8 }}>
                   <button onClick={() => respond(r.id, true)} style={{ marginRight: 8 }}>Accept</button>
@@ -1083,9 +1077,6 @@ function BarberReservations() {
                   <button onClick={() => respond(r.id, false)}>Decline</button>
                 </div>
               )}
-
-              {r.status === 'declined' && <div>{r.message}</div>}
-
               <button onClick={() => handleDelete(r.id)} style={{ marginTop: 8 }}>Delete</button>
             </li>
           ))}
@@ -1102,11 +1093,11 @@ export default function App() {
   return (
     <Routes>
       {role === 'barber' ? (
-        <Route path="/reservations" element={<BarberReservations />} />
+        <Route index element={<BarberReservations />} />
       ) : (
         <>
-          <Route path="/reservations" element={<CreateReservation />} />
-          <Route path="/reservations/list" element={<ListReservations />} />
+          <Route index element={<CreateReservation />} />
+          <Route path="list" element={<ListReservations />} />
         </>
       )}
     </Routes>

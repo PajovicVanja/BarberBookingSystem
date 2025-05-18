@@ -1,4 +1,3 @@
-// internal/services/payment_service.go
 package services
 
 import (
@@ -7,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
 	"paymentservice/internal/messaging"
 	"paymentservice/internal/models"
 	"paymentservice/internal/repository"
 )
 
+// PaymentService defines our service interface.
 type PaymentService interface {
 	ProcessPayment(payment *models.Payment) error
 	GetPaymentByID(id int64) (*models.Payment, error)
@@ -22,34 +23,42 @@ type PaymentService interface {
 }
 
 type paymentService struct {
-	repo repository.PaymentRepository
-	mq   messaging.MessageQueue
+	repo                  repository.PaymentRepository
+	mq                    messaging.MessageQueue
+	eventQueue            string
+	reservationServiceURL string
 }
 
-func NewPaymentService(repo repository.PaymentRepository, mq messaging.MessageQueue) PaymentService {
+// NewPaymentService takes repo, mq, the domain-event queue name, and the reservation-service base URL.
+func NewPaymentService(
+	repo repository.PaymentRepository,
+	mq messaging.MessageQueue,
+	eventQueue string,
+	reservationServiceURL string,
+) PaymentService {
 	return &paymentService{
-		repo: repo,
-		mq:   mq,
+		repo:                  repo,
+		mq:                    mq,
+		eventQueue:            eventQueue,
+		reservationServiceURL: reservationServiceURL,
 	}
 }
 
 func (s *paymentService) ProcessPayment(payment *models.Payment) error {
-	// 🔍 1) Fetch the reservation to ensure it’s been accepted
-	url := fmt.Sprintf("http://reservation-service:8000/api/reservations/%s", payment.ReservationID)
+	// 1) Fetch reservation to confirm it’s accepted
+	url := fmt.Sprintf("%s/api/reservations/%s", s.reservationServiceURL, payment.ReservationID)
 	resp, err := http.Get(url)
 	if err != nil || resp.StatusCode != 200 {
 		return errors.New("could not fetch reservation")
 	}
 	defer resp.Body.Close()
 
-	// The reservation endpoint returns a Reservation JSON directly
 	var res struct {
-		ID             string `json:"id"`
-		UserID         string `json:"user_id"`
-		BarberID       string `json:"barber_id"`
+		ID              string `json:"id"`
+		UserID          string `json:"user_id"`
+		BarberID        string `json:"barber_id"`
 		AppointmentTime string `json:"appointment_time"`
-		Status         string `json:"status"`
-		Message        string `json:"message,omitempty"`
+		Status          string `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return errors.New("error decoding reservation")
@@ -58,23 +67,25 @@ func (s *paymentService) ProcessPayment(payment *models.Payment) error {
 		return errors.New("reservation not accepted")
 	}
 
-	// 🔖 2) Record which barber this payment is for
+	// 2) Record barber ID
 	barberID, err := strconv.ParseInt(res.BarberID, 10, 64)
 	if err != nil {
 		return errors.New("invalid barber ID in reservation")
 	}
 	payment.BarberID = barberID
 
-	// ✔ 3) Process & save the payment
+	// 3) Save payment
 	payment.Status = "success"
 	if err := s.repo.Create(payment); err != nil {
 		return err
 	}
 
-	// 📣 4) Publish payment.processed event
-	go func(p models.Payment) {
-		_ = s.mq.Publish("payment.processed", p)
-	}(*payment)
+	// 4) **Synchronously** publish a domain event: PaymentProcessed
+	event := map[string]interface{}{
+		"type": "PaymentProcessed",
+		"data": *payment,
+	}
+	_ = s.mq.Publish(s.eventQueue, event)
 
 	return nil
 }
@@ -100,9 +111,13 @@ func (s *paymentService) DeletePayment(id int64) error {
 	if err := s.repo.Delete(id); err != nil {
 		return err
 	}
-	// Publish payment.deleted event
-	go func(id int64) {
-		_ = s.mq.Publish("payment.deleted", map[string]interface{}{"id": id})
-	}(id)
+
+	// **Synchronously** publish a domain event: PaymentDeleted
+	event := map[string]interface{}{
+		"type": "PaymentDeleted",
+		"data": map[string]interface{}{"id": id},
+	}
+	_ = s.mq.Publish(s.eventQueue, event)
+
 	return nil
 }
