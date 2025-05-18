@@ -4,6 +4,8 @@ from typing import List
 from app.models import Reservation, ReservationCreate, ReservationUpdate
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from app.utils.publisher import publish_event
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 client = AsyncIOMotorClient(MONGO_URL)
@@ -13,9 +15,22 @@ collection = db["reservations"]
 async def create_reservation(reservation: ReservationCreate) -> Reservation:
     reservation_dict = reservation.model_dump()
     reservation_dict["status"] = "pending"
-    # note: message will be absent until a decline
     result = await collection.insert_one(reservation_dict)
     reservation_dict["id"] = str(result.inserted_id)
+
+    # --- publish domain event ---
+    # serialize appointment_time to ISO string if datetime
+    appt = reservation_dict["appointment_time"]
+    appt_str = appt.isoformat() if isinstance(appt, datetime) else str(appt)
+    publish_event("ReservationCreated", {
+        "id": reservation_dict["id"],
+        "user_id": reservation_dict["user_id"],
+        "barber_id": reservation_dict["barber_id"],
+        "appointment_time": appt_str,
+        "status": reservation_dict["status"]
+    })
+    # --- end publish ---
+
     return Reservation(**reservation_dict)
 
 async def get_reservation(reservation_id: str) -> Reservation:
@@ -39,7 +54,7 @@ async def list_user_reservations(user_id: str) -> List[Reservation]:
     logger.info("🔍 Fetching reservations for user: %s", user_id)
     results = await collection.find({"user_id": user_id}).to_list(length=100)
     reservations: List[Reservation] = []
-    for i, res in enumerate(results):
+    for res in results:
         try:
             reservations.append(Reservation(
                 id=str(res["_id"]),

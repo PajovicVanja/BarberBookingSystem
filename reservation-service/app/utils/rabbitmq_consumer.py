@@ -6,6 +6,7 @@ from app.config import RABBITMQ_URL
 from app.utils.logger import logger
 from app import crud
 from app.models import ReservationUpdate
+from app.utils.publisher import publish_event
 
 # Name of the queue for payment confirmations
 PAYMENT_CONFIRMATIONS_QUEUE = "payment_confirmations"
@@ -23,7 +24,15 @@ def process_message(ch, method, properties, body):
             update = ReservationUpdate(status=status)
             loop.run_until_complete(crud.update_reservation(reservation_id, update))
             logger.info("Updated reservation %s to status %s", reservation_id, status)
+
+            # --- publish domain event for status change ---
+            publish_event("ReservationStatusUpdated", {
+                "reservation_id": reservation_id,
+                "status": status
+            })
+
             loop.close()
+
         # Acknowledge that message was processed
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
@@ -45,7 +54,7 @@ def start_consumer():
         channel.start_consuming()
     except Exception as e:
         logger.error("Consumer error: %s", e)
-        # Here you could add reconnection logic (e.g., wait and then restart the consumer)
+        # Here you could add reconnection logic
         # For now, we just log the error.
 
 def run_consumer_in_background():

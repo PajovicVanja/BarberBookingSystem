@@ -11,5 +11,9 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "reservationdb")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "reservation_notifications")
 
+# Domain Events configuration
+# Where reservation-service will publish its domain events
+RABBITMQ_EVENT_QUEUE = os.getenv("RABBITMQ_EVENT_QUEUE", "reservation_events")
+
 # gRPC server port
 GRPC_SERVER_PORT = os.getenv("GRPC_SERVER_PORT", "50051")

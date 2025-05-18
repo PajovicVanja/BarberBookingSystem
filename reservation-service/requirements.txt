@@ -13,3 +13,4 @@ anyio
 asgiref
 pytest-asyncio
 python-dotenv
+dotenv
