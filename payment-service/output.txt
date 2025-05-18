@@ -594,6 +594,9 @@ import (
 	"paymentservice/internal/messaging"
 	"paymentservice/internal/models"
 	"paymentservice/internal/repository"
+	"paymentservice/internal/utils"
+
+	gobreaker "github.com/sony/gobreaker/v2"
 )
 
 // PaymentService defines our service interface.
@@ -613,7 +616,7 @@ type paymentService struct {
 	reservationServiceURL string
 }
 
-// NewPaymentService takes repo, mq, the domain-event queue name, and the reservation-service base URL.
+// NewPaymentService takes repo, mq, the domain‐event queue name, and the reservation‐service base URL.
 func NewPaymentService(
 	repo repository.PaymentRepository,
 	mq messaging.MessageQueue,
@@ -629,14 +632,35 @@ func NewPaymentService(
 }
 
 func (s *paymentService) ProcessPayment(payment *models.Payment) error {
-	// 1) Fetch reservation to confirm it’s accepted
+	// 1) Fetch reservation via circuit breaker (fail‐fast if breaker is open)
 	url := fmt.Sprintf("%s/api/reservations/%s", s.reservationServiceURL, payment.ReservationID)
-	resp, err := http.Get(url)
-	if err != nil || resp.StatusCode != 200 {
-		return errors.New("could not fetch reservation")
+
+	// wrap the HTTP call such that any non-200 or network error is treated as a failure
+	resIfc, err := utils.ReservationCB.Execute(func() (*http.Response, error) {
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			// we must close the body here since we're aborting
+			resp.Body.Close()
+			return nil, fmt.Errorf("reservation service returned %d", resp.StatusCode)
+		}
+		return resp, nil
+	})
+
+	// handle circuit-open vs. other errors
+	if err != nil {
+		if errors.Is(err, gobreaker.ErrOpenState) {
+			return utils.ErrCircuitOpen
+		}
+		return fmt.Errorf("could not fetch reservation: %w", err)
 	}
+
+	resp := resIfc
 	defer resp.Body.Close()
 
+	// 2) Decode and validate reservation payload
 	var res struct {
 		ID              string `json:"id"`
 		UserID          string `json:"user_id"`
@@ -651,20 +675,20 @@ func (s *paymentService) ProcessPayment(payment *models.Payment) error {
 		return errors.New("reservation not accepted")
 	}
 
-	// 2) Record barber ID
+	// 3) Record barber ID
 	barberID, err := strconv.ParseInt(res.BarberID, 10, 64)
 	if err != nil {
 		return errors.New("invalid barber ID in reservation")
 	}
 	payment.BarberID = barberID
 
-	// 3) Save payment
+	// 4) Save payment
 	payment.Status = "success"
 	if err := s.repo.Create(payment); err != nil {
 		return err
 	}
 
-	// 4) **Synchronously** publish a domain event: PaymentProcessed
+	// 5) Publish a domain event: PaymentProcessed
 	event := map[string]interface{}{
 		"type": "PaymentProcessed",
 		"data": *payment,
@@ -696,14 +720,54 @@ func (s *paymentService) DeletePayment(id int64) error {
 		return err
 	}
 
-	// **Synchronously** publish a domain event: PaymentDeleted
+	// Publish a domain event: PaymentDeleted
 	event := map[string]interface{}{
 		"type": "PaymentDeleted",
 		"data": map[string]interface{}{"id": id},
 	}
 	_ = s.mq.Publish(s.eventQueue, event)
-
 	return nil
+}
+
+
+=== internal\utils\circuitbreaker.go ===
+package utils
+
+import (
+    "log"
+    "net/http"
+    "time"
+	"errors"
+    gobreaker "github.com/sony/gobreaker/v2"
+)
+
+// ReservationCB is a circuit breaker for calls to the reservation service
+// (it wraps functions returning *http.Response, error).
+var ReservationCB *gobreaker.CircuitBreaker[*http.Response]
+
+// ErrCircuitOpen is returned when the reservation‐service circuit breaker is open.
+var ErrCircuitOpen = errors.New("reservation service unavailable (circuit open)")
+
+func init() {
+    settings := gobreaker.Settings{
+        Name:        "ReservationServiceCB",
+        MaxRequests: 5,                // in half-open, allow up to 5 trial calls
+        Interval:    30 * time.Second, // reset counts every 30s
+        Timeout:     60 * time.Second, // stay open for 60s
+        ReadyToTrip: func(counts gobreaker.Counts) bool {
+            // only trip after ≥10 requests, and >50% failures
+            if counts.Requests < 10 {
+                return false
+            }
+            return float64(counts.TotalFailures)/float64(counts.Requests) > 0.5
+        },
+        OnStateChange: func(name string, from, to gobreaker.State) {
+            log.Printf("circuit breaker %q: %s → %s", name, from.String(), to.String())
+        },
+        // uses default IsSuccessful (any non-nil error counts as failure)
+    }
+
+    ReservationCB = gobreaker.NewCircuitBreaker[*http.Response](settings)
 }
 
 
@@ -866,6 +930,92 @@ func TestDeletePayment(t *testing.T) {
 }
 
 
+=== tests\payment_service_circuitbreaker_test.go ===
+package tests
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/sony/gobreaker/v2"
+	"paymentservice/internal/models"
+	"paymentservice/internal/services"
+	"paymentservice/internal/utils"
+)
+
+// dummyRepo satisfies repository.PaymentRepository but does nothing.
+type dummyRepo struct{}
+
+func (d *dummyRepo) Create(p *models.Payment) error               { p.ID = 1; return nil }
+func (d *dummyRepo) GetByID(id int64) (*models.Payment, error)   { return nil, nil }
+func (d *dummyRepo) GetByUserID(id int64) ([]*models.Payment, error) { return nil, nil }
+func (d *dummyRepo) GetByBarberID(id int64) ([]*models.Payment, error) { return nil, nil }
+func (d *dummyRepo) Delete(id int64) error                       { return nil }
+
+// newTestBreaker constructs a circuit‐breaker with low thresholds for testing.
+func newTestBreaker() *gobreaker.CircuitBreaker[*http.Response] {
+	settings := gobreaker.Settings{
+		Name:        "TestCB",
+		MaxRequests: 1,
+		Interval:    time.Second,
+		Timeout:     time.Second,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.TotalFailures >= 3
+		},
+		OnStateChange: func(name string, from, to gobreaker.State) {
+			fmt.Printf("CB state change: %s → %s\n", from.String(), to.String())
+		},
+	}
+	return gobreaker.NewCircuitBreaker[*http.Response](settings)
+}
+
+func TestCircuitBreakerTrips(t *testing.T) {
+	// 1) a handler that always fails
+	failSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer failSrv.Close()
+
+	// 2) reset the global breaker to our test instance
+	utils.ReservationCB = newTestBreaker()
+
+	// 3) construct our service, pointing at the failing server
+	svc := services.NewPaymentService(&dummyRepo{}, nil, "", failSrv.URL)
+	p := &models.Payment{ReservationID: "foo"}
+
+	// 4) hammer it until the breaker opens
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		lastErr = svc.ProcessPayment(p)
+		if errors.Is(lastErr, utils.ErrCircuitOpen) {
+			t.Logf("breaker opened after %d attempts", i+1)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !errors.Is(lastErr, utils.ErrCircuitOpen) {
+		t.Fatal("expected breaker to open, but it did not")
+	}
+
+	// 5) subsequent calls must fail fast
+	start := time.Now()
+	err := svc.ProcessPayment(p)
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, utils.ErrCircuitOpen) {
+		t.Fatalf("expected circuit-open error, got %v", err)
+	}
+	if elapsed > 5*time.Millisecond {
+		t.Fatalf("expected fast-fail but took %v", elapsed)
+	}
+}
+
+
 === tests\payment_service_test.go ===
 // payment-service/tests/payment_service_test.go
 package tests
@@ -891,9 +1041,11 @@ func (f *fakeRepo) Create(p *models.Payment) error {
 	p.CreatedAt = time.Now()
 	return nil
 }
-func (f *fakeRepo) GetByID(id int64) (*models.Payment, error)   { return nil, nil }
+func (f *fakeRepo) GetByID(id int64) (*models.Payment, error)            { return nil, nil }
 func (f *fakeRepo) GetByUserID(userID int64) ([]*models.Payment, error) { return nil, nil }
-func (f *fakeRepo) GetByBarberID(barberID int64) ([]*models.Payment, error) { return nil, nil }
+func (f *fakeRepo) GetByBarberID(barberID int64) ([]*models.Payment, error) {
+	return nil, nil
+}
 func (f *fakeRepo) Delete(id int64) error { return nil }
 
 // fakeMQ captures publishes
@@ -910,7 +1062,7 @@ func (f *fakeMQ) Publish(routingKey string, message interface{}) error {
 func (f *fakeMQ) Close() error { return nil }
 
 func TestProcessPayment_PublishesEvent(t *testing.T) {
-	// 1) Start a test HTTP server that returns an "accepted" reservation
+	// 1) HTTP test server that returns an "accepted" reservation
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
 			"id":               "res-123",
@@ -923,7 +1075,7 @@ func TestProcessPayment_PublishesEvent(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// 2) Inject fakes & use ts.URL as the reservationServiceURL
+	// 2) Inject fakes & point the service at ts.URL
 	repo := &fakeRepo{}
 	mq := &fakeMQ{}
 	svc := services.NewPaymentService(repo, mq, "payment_events", ts.URL)
@@ -939,15 +1091,16 @@ func TestProcessPayment_PublishesEvent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(77), p.ID)
 
-	// 4) Verify the published event
-	pub, ok := mq.lastMessage.(map[string]interface{})
-	assert.True(t, ok, "message should be a map[string]interface{}")
+	// 4) Inspect the event map
+	evt, ok := mq.lastMessage.(map[string]interface{})
+	assert.True(t, ok, "event must be a map[string]interface{}")
 	assert.Equal(t, "payment_events", mq.lastRoutingKey)
-	assert.Equal(t, "PaymentProcessed", pub["type"])
+	assert.Equal(t, "PaymentProcessed", evt["type"])
 
-	// The "data" field should be a JSON‐decoded map, so we can check its "ID"
-	data := pub["data"].(map[string]interface{})
-	assert.Equal(t, float64(77), data["ID"])
+	// 5) The "data" field is your Payment struct
+	published, ok := evt["data"].(models.Payment)
+	assert.True(t, ok, `"data" should be a models.Payment`)
+	assert.Equal(t, p.ID, published.ID)
 }
 
 func TestDeletePayment_PublishesEvent(t *testing.T) {
@@ -958,26 +1111,30 @@ func TestDeletePayment_PublishesEvent(t *testing.T) {
 	err := svc.DeletePayment(42)
 	assert.NoError(t, err)
 
-	pub, ok := mq.lastMessage.(map[string]interface{})
+	evt, ok := mq.lastMessage.(map[string]interface{})
 	assert.True(t, ok)
-	assert.Equal(t, "PaymentDeleted", pub["type"])
-	d := pub["data"].(map[string]interface{})
-	assert.Equal(t, float64(42), d["id"])
+	assert.Equal(t, "PaymentDeleted", evt["type"])
+
+	dataMap, ok := evt["data"].(map[string]interface{})
+	assert.True(t, ok)
+	// since we built it with an int64, it stays int64
+	assert.Equal(t, int64(42), dataMap["id"])
 }
 
 
 === go.mod ===
 module paymentservice
 
-go 1.21.0
+go 1.22.0
 
 toolchain go1.24.1
 
 require (
 	github.com/gin-gonic/gin v1.7.7
 	github.com/go-sql-driver/mysql v1.9.1
+	github.com/sony/gobreaker/v2 v2.1.0
 	github.com/streadway/amqp v1.0.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.4
 	github.com/swaggo/gin-swagger v1.3.1
 	github.com/swaggo/swag v1.16.3
 )
@@ -987,7 +1144,9 @@ require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.6 // indirect
@@ -996,7 +1155,10 @@ require (
 	github.com/go-playground/locales v0.13.0 // indirect
 	github.com/go-playground/universal-translator v0.17.0 // indirect
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
+	github.com/go-redsync/redsync/v4 v4.13.0 // indirect
 	github.com/golang/protobuf v1.3.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	github.com/leodido/go-urn v1.2.0 // indirect
@@ -1005,6 +1167,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/redis/go-redis/v9 v9.7.0 // indirect
 	github.com/ugorji/go/codec v1.1.13 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
@@ -1012,7 +1175,7 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/tools v0.7.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 

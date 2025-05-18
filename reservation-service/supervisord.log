@@ -476,3 +476,23 @@
 2025-05-18 12:38:38,235 INFO spawned: 'rest' with pid 8
 2025-05-18 12:38:39,914 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
 2025-05-18 12:38:39,915 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-05-18 12:49:10,575 WARN received SIGTERM indicating exit request
+2025-05-18 12:49:10,576 INFO waiting for grpc, rest to die
+2025-05-18 12:49:10,695 WARN stopped: rest (terminated by SIGTERM)
+2025-05-18 12:49:10,707 WARN stopped: grpc (terminated by SIGTERM)
+2025-05-18 13:03:56,730 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-05-18 13:03:56,736 INFO supervisord started with pid 1
+2025-05-18 13:03:57,738 INFO spawned: 'grpc' with pid 7
+2025-05-18 13:03:57,739 INFO spawned: 'rest' with pid 8
+2025-05-18 13:03:59,564 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-05-18 13:03:59,565 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-05-18 13:06:28,992 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2025-05-18 13:06:28,997 INFO supervisord started with pid 1
+2025-05-18 13:06:30,000 INFO spawned: 'grpc' with pid 7
+2025-05-18 13:06:30,002 INFO spawned: 'rest' with pid 8
+2025-05-18 13:06:31,720 INFO success: grpc entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-05-18 13:06:31,720 INFO success: rest entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-05-18 13:10:45,018 WARN received SIGTERM indicating exit request
+2025-05-18 13:10:45,020 INFO waiting for grpc, rest to die
+2025-05-18 13:10:45,162 WARN stopped: rest (terminated by SIGTERM)
+2025-05-18 13:10:45,165 WARN stopped: grpc (terminated by SIGTERM)
