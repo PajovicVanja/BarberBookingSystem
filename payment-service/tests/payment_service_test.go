@@ -1,4 +1,3 @@
-// payment-service/tests/payment_service_test.go
 package tests
 
 import (

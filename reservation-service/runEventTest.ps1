@@ -1,0 +1,1 @@
+python -m pytest -q tests/test_crud_events.py

@@ -1,8 +1,35 @@
+=== cmd\payment-service\creatingdb.sql ===
+CREATE DATABASE IF NOT EXISTS paymentdb;
+
+USE paymentdb;
+
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    barber_id BIGINT NOT NULL,
+    reservation_id VARCHAR(50) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    payment_method VARCHAR(100) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO payments (user_id, reservation_id, barber_id, amount, status, payment_method)
+VALUES
+(1, '101', 10, 49.99, 'success', 'credit_card'),
+(2, '102', 12, 75.00, 'pending', 'paypal');
+
+
 === cmd\payment-service\main.go ===
 package main
 
 import (
+	"database/sql"
+	_ "embed"
+	"fmt"
 	"log"
+	"strings"
+
 	"paymentservice/internal/config"
 	"paymentservice/internal/handlers"
 	"paymentservice/internal/messaging"
@@ -11,38 +38,64 @@ import (
 	"paymentservice/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/swaggo/gin-swagger"
-	"github.com/swaggo/gin-swagger/swaggerFiles"
-	_ "paymentservice/docs"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	swaggerFiles "github.com/swaggo/gin-swagger/swaggerFiles"
 	_ "github.com/go-sql-driver/mysql"
 )
 
+//go:embed creatingdb.sql
+var initSQL []byte
+
+func applyInitScript(rawDSN string) error {
+	if !strings.Contains(rawDSN, "multiStatements=true") {
+		sep := "?"
+		if strings.Contains(rawDSN, "?") {
+			sep = "&"
+		}
+		rawDSN += sep + "multiStatements=true"
+	}
+	db, err := sql.Open("mysql", rawDSN)
+	if err != nil {
+		return fmt.Errorf("opening admin DB: %w", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(string(initSQL)); err != nil {
+		return fmt.Errorf("executing init SQL: %w", err)
+	}
+	return nil
+}
+
 func main() {
-	// Load configuration
+	// Load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("could not load config: %v", err)
 	}
 
-	// Initialize MySQL database connection
+	// Apply DB init
+	if err := applyInitScript(cfg.DatabaseDSN); err != nil {
+		log.Fatalf("failed to apply DB init script: %v", err)
+	}
+
+	// Open paymentdb
 	db, err := repository.NewMySQLDB(cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatalf("could not connect to database: %v", err)
 	}
 	defer db.Close()
 
-	// Initialize RabbitMQ connection (for publishing)
-	mq, err := messaging.NewRabbitMQClient(cfg.RabbitMQURL)
+	// Create RabbitMQ client *and declare* the payment_events queue
+	mq, err := messaging.NewRabbitMQClient(cfg.RabbitMQURL, cfg.RabbitMQEventQueue)
 	if err != nil {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
 	defer mq.Close()
 
-	// (Optional) still consume reservation notifications
+	// Start reservation-notifications consumer
 	go messaging.StartReservationConsumer(cfg.RabbitMQURL, "reservation_notifications")
 
-	// Create repository and service layer instances,
-	// now passing in the reservation‐service base URL from config:
+	// Wire up service
 	paymentRepo := repository.NewPaymentRepository(db)
 	paymentService := services.NewPaymentService(
 		paymentRepo,
@@ -51,17 +104,18 @@ func main() {
 		cfg.ReservationServiceURL,
 	)
 
-	// Set up Gin engine with logging middleware
+	// Setup HTTP server
 	r := gin.Default()
 	r.Use(middleware.Logger())
-
-	// Register payment routes
 	handlers.RegisterPaymentRoutes(r, paymentService)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	log.Printf("Starting server on port %s", cfg.ServerPort)
 	r.Run(":" + cfg.ServerPort)
 }
+
+
+=== internal\config\.env ===
 
 
 === internal\config\config.go ===
@@ -311,6 +365,7 @@ package messaging
 
 import (
 	"encoding/json"
+	"log"
 
 	"github.com/streadway/amqp"
 )
@@ -326,43 +381,60 @@ type rabbitMQClient struct {
 	channel *amqp.Channel
 }
 
-// NewRabbitMQClient creates a new RabbitMQ client.
-func NewRabbitMQClient(url string) (MessageQueue, error) {
+// NewRabbitMQClient creates a new RabbitMQ client and declares the event queue.
+func NewRabbitMQClient(url, eventQueue string) (MessageQueue, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
 		return nil, err
 	}
 	ch, err := conn.Channel()
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
-	return &rabbitMQClient{
-		conn:    conn,
-		channel: ch,
-	}, nil
+
+	// Ensure the event queue exists
+	_, err = ch.QueueDeclare(
+		eventQueue, // queue name
+		true,       // durable
+		false,      // auto-delete when unused
+		false,      // exclusive
+		false,      // no-wait
+		nil,        // args
+	)
+	if err != nil {
+		ch.Close()
+		conn.Close()
+		return nil, err
+	}
+
+	return &rabbitMQClient{conn: conn, channel: ch}, nil
 }
 
-// Publish sends a message to the specified routing key.
+// Publish sends a message to the specified routingKey (queue).
 func (r *rabbitMQClient) Publish(routingKey string, message interface{}) error {
 	body, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
-	return r.channel.Publish(
-		"", // default exchange
-		routingKey,
-		false,
-		false,
+	if err := r.channel.Publish(
+		"",         // default exchange
+		routingKey, // routing key == queue name
+		false, false,
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        body,
 		},
-	)
+	); err != nil {
+		log.Printf("🔴 failed to publish to queue %q: %v", routingKey, err)
+	}
+	return err
 }
 
 // Close cleans up the RabbitMQ connection.
 func (r *rabbitMQClient) Close() error {
 	if err := r.channel.Close(); err != nil {
+		r.conn.Close()
 		return err
 	}
 	return r.conn.Close()
@@ -588,6 +660,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -631,42 +704,37 @@ func NewPaymentService(
 	}
 }
 
+// ProcessPayment calls the reservation‐service via a circuit‐breaker, saves the payment,
+// and publishes a PaymentProcessed event.
 func (s *paymentService) ProcessPayment(payment *models.Payment) error {
-	// 1) Fetch reservation via circuit breaker (fail‐fast if breaker is open)
 	url := fmt.Sprintf("%s/api/reservations/%s", s.reservationServiceURL, payment.ReservationID)
 
-	// wrap the HTTP call such that any non-200 or network error is treated as a failure
 	resIfc, err := utils.ReservationCB.Execute(func() (*http.Response, error) {
 		resp, err := http.Get(url)
 		if err != nil {
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			// we must close the body here since we're aborting
 			resp.Body.Close()
 			return nil, fmt.Errorf("reservation service returned %d", resp.StatusCode)
 		}
 		return resp, nil
 	})
 
-	// handle circuit-open vs. other errors
 	if err != nil {
 		if errors.Is(err, gobreaker.ErrOpenState) {
 			return utils.ErrCircuitOpen
 		}
 		return fmt.Errorf("could not fetch reservation: %w", err)
 	}
-
 	resp := resIfc
 	defer resp.Body.Close()
 
-	// 2) Decode and validate reservation payload
 	var res struct {
-		ID              string `json:"id"`
-		UserID          string `json:"user_id"`
-		BarberID        string `json:"barber_id"`
-		AppointmentTime string `json:"appointment_time"`
-		Status          string `json:"status"`
+		ID        string `json:"id"`
+		UserID    string `json:"user_id"`
+		BarberID  string `json:"barber_id"`
+		Status    string `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return errors.New("error decoding reservation")
@@ -675,25 +743,24 @@ func (s *paymentService) ProcessPayment(payment *models.Payment) error {
 		return errors.New("reservation not accepted")
 	}
 
-	// 3) Record barber ID
 	barberID, err := strconv.ParseInt(res.BarberID, 10, 64)
 	if err != nil {
 		return errors.New("invalid barber ID in reservation")
 	}
 	payment.BarberID = barberID
 
-	// 4) Save payment
 	payment.Status = "success"
 	if err := s.repo.Create(payment); err != nil {
 		return err
 	}
 
-	// 5) Publish a domain event: PaymentProcessed
 	event := map[string]interface{}{
 		"type": "PaymentProcessed",
 		"data": *payment,
 	}
-	_ = s.mq.Publish(s.eventQueue, event)
+	if err := s.mq.Publish(s.eventQueue, event); err != nil {
+		log.Printf("🔴 failed to publish PaymentProcessed event: %v", err)
+	}
 
 	return nil
 }
@@ -711,7 +778,7 @@ func (s *paymentService) GetPaymentsByBarber(barberID int64) ([]*models.Payment,
 }
 
 func (s *paymentService) HandleWebhook(data map[string]interface{}) error {
-	// implement as needed
+	// your webhook logic (or no-op)
 	return nil
 }
 
@@ -719,13 +786,13 @@ func (s *paymentService) DeletePayment(id int64) error {
 	if err := s.repo.Delete(id); err != nil {
 		return err
 	}
-
-	// Publish a domain event: PaymentDeleted
 	event := map[string]interface{}{
 		"type": "PaymentDeleted",
 		"data": map[string]interface{}{"id": id},
 	}
-	_ = s.mq.Publish(s.eventQueue, event)
+	if err := s.mq.Publish(s.eventQueue, event); err != nil {
+		log.Printf("🔴 failed to publish PaymentDeleted event: %v", err)
+	}
 	return nil
 }
 
@@ -734,28 +801,28 @@ func (s *paymentService) DeletePayment(id int64) error {
 package utils
 
 import (
+    "errors"
     "log"
     "net/http"
     "time"
-	"errors"
+
     gobreaker "github.com/sony/gobreaker/v2"
 )
 
-// ReservationCB is a circuit breaker for calls to the reservation service
-// (it wraps functions returning *http.Response, error).
+// ReservationCB is the (global) circuit breaker used by PaymentService.
 var ReservationCB *gobreaker.CircuitBreaker[*http.Response]
 
-// ErrCircuitOpen is returned when the reservation‐service circuit breaker is open.
+// ErrCircuitOpen is returned when the circuit is open.
 var ErrCircuitOpen = errors.New("reservation service unavailable (circuit open)")
 
-func init() {
+// newDefaultReservationCB creates a fresh breaker with your default settings.
+func newDefaultReservationCB() *gobreaker.CircuitBreaker[*http.Response] {
     settings := gobreaker.Settings{
         Name:        "ReservationServiceCB",
-        MaxRequests: 5,                // in half-open, allow up to 5 trial calls
-        Interval:    30 * time.Second, // reset counts every 30s
-        Timeout:     60 * time.Second, // stay open for 60s
+        MaxRequests: 5,
+        Interval:    30 * time.Second,
+        Timeout:     60 * time.Second,
         ReadyToTrip: func(counts gobreaker.Counts) bool {
-            // only trip after ≥10 requests, and >50% failures
             if counts.Requests < 10 {
                 return false
             }
@@ -764,15 +831,22 @@ func init() {
         OnStateChange: func(name string, from, to gobreaker.State) {
             log.Printf("circuit breaker %q: %s → %s", name, from.String(), to.String())
         },
-        // uses default IsSuccessful (any non-nil error counts as failure)
     }
+    return gobreaker.NewCircuitBreaker[*http.Response](settings)
+}
 
-    ReservationCB = gobreaker.NewCircuitBreaker[*http.Response](settings)
+// ResetReservationCB wipes out the old breaker and replaces it with a fresh one.
+func ResetReservationCB() {
+    ReservationCB = newDefaultReservationCB()
+}
+
+func init() {
+    // initialize global breaker on package load
+    ResetReservationCB()
 }
 
 
 === tests\payment_handler_test.go ===
-// tests/payment_handler_test.go
 package tests
 
 import (
@@ -1017,7 +1091,6 @@ func TestCircuitBreakerTrips(t *testing.T) {
 
 
 === tests\payment_service_test.go ===
-// payment-service/tests/payment_service_test.go
 package tests
 
 import (
